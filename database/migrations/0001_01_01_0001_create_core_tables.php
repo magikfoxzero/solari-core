@@ -657,6 +657,25 @@ return new class extends Migration
             });
         }
 
+        // User soft bans (admin-only shadow bans)
+        if (!Schema::hasTable('user_soft_bans')) {
+            Schema::create('user_soft_bans', function (Blueprint $table) {
+                $table->string('record_id', 36)->primary();
+                $table->string('user_id', 36);
+                $table->string('banned_by', 36);
+                $table->text('reason')->nullable();
+                $table->timestamp('banned_until')->nullable();
+                $table->string('partition_id', 36);
+                $table->boolean('deleted')->default(false);
+                $table->string('deleted_by', 36)->nullable();
+                $table->timestamp('deleted_at')->nullable();
+                $table->timestamps();
+                $table->index(['partition_id', 'user_id', 'deleted'], 'idx_soft_bans_lookup');
+                $table->index('banned_until', 'idx_soft_bans_expiry');
+                $table->index('user_id', 'idx_soft_bans_user');
+            });
+        }
+
         // Core modules registry
         Schema::create('core_modules', function (Blueprint $table) {
             $table->string('id', 50)->primary();
@@ -677,6 +696,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::disableForeignKeyConstraints();
+        Schema::dropIfExists('user_soft_bans');
         Schema::dropIfExists('user_blocks');
         Schema::dropIfExists('core_modules');
         Schema::dropIfExists('registry_settings_archive');
