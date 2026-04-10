@@ -140,19 +140,22 @@ class RegistryController extends BaseController
                 'partition_id' => 'nullable|string',
             ]);
 
+            // Set default partition_id
+            if (empty($validated['partition_id'])) {
+                $validated['partition_id'] = $partitionId;
+            }
+
             // Set default scope_id based on scope
             if (empty($validated['scope_id'])) {
                 if ($validated['scope'] === 'user') {
                     $validated['scope_id'] = $user->record_id;
                 } elseif ($validated['scope'] === 'partition') {
-                    $validated['scope_id'] = $partitionId;
+                    // Use the resolved partition_id so body-provided partition_id
+                    // takes precedence over the header (important for system admins
+                    // managing a partition different from their own)
+                    $validated['scope_id'] = $validated['partition_id'];
                 }
                 // System scope doesn't need scope_id
-            }
-
-            // Set default partition_id
-            if (empty($validated['partition_id']) && ! $user->is_system_user) {
-                $validated['partition_id'] = $partitionId;
             }
 
             // Check if trying to create partition registration as enabled when system registration is disabled

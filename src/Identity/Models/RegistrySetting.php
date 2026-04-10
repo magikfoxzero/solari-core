@@ -204,6 +204,38 @@ class RegistrySetting extends BaseEntity
         }
 
         try {
+            // Check if a setting with the same key+scope already exists (upsert)
+            // Look for exact scope_id match first, then fall back to NULL scope_id
+            // (PartitionController::create seeds records with scope_id=NULL)
+            $existing = static::where('key', $data['key'])
+                ->where('scope', $data['scope'])
+                ->where(function ($query) use ($data) {
+                    $query->where('scope_id', $data['scope_id'] ?? null);
+                    if (! empty($data['scope_id'])) {
+                        $query->orWhereNull('scope_id');
+                    }
+                })
+                ->first();
+
+            if ($existing) {
+                $updateData = [
+                    'value' => $data['value'],
+                    'updated_by' => $user->record_id,
+                ];
+                // Fix scope_id if it was NULL (legacy records from partition creation)
+                if ($existing->scope_id === null && ! empty($data['scope_id'])) {
+                    $updateData['scope_id'] = $data['scope_id'];
+                }
+                // Fix partition_id if it was stored inconsistently
+                if (! empty($data['partition_id']) && $existing->partition_id !== $data['partition_id']) {
+                    $updateData['partition_id'] = $data['partition_id'];
+                }
+                $existing->update($updateData);
+                self::logOperation('upsert', $user, $data, $existing->record_id);
+
+                return $existing;
+            }
+
             $setting = static::createWithValidation($data);
             self::logOperation('create', $user, $data, $setting->record_id);
 

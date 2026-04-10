@@ -213,8 +213,8 @@ class PartitionController extends BaseController
             'scope' => 'partition',
             'key' => 'partition.registration.default_group',
             'value' => json_encode([$usersGroup->record_id]),
+            'scope_id' => $partitionId,
             'partition_id' => $partitionId,
-            'description' => 'Default groups for newly registered users',
         ]);
 
         // Set registration as disabled by default for new partitions
@@ -222,8 +222,8 @@ class PartitionController extends BaseController
             'scope' => 'partition',
             'key' => 'partition.registration.enabled',
             'value' => 'false',
+            'scope_id' => $partitionId,
             'partition_id' => $partitionId,
-            'description' => 'Whether user registration is enabled for this partition',
         ]);
 
         return $this->successResponse($partition, 201);

@@ -442,10 +442,20 @@ class IdentityController extends BaseController
         // Find user by username in the requested partition
         // Since usernames are now unique per partition (not globally),
         // we must scope the lookup to the partition being logged into.
+        // System users (admins) can log into any partition — try partition-scoped first,
+        // then fall back to unscoped lookup for system users.
         $user = IdentityUser::withoutGlobalScope('partition')
             ->where('username', $validated['username'])
             ->where('partition_id', $validated['partition_id'])
             ->first();
+
+        if (! $user) {
+            // Check if this is a system user logging into a different partition
+            $user = IdentityUser::withoutGlobalScope('partition')
+                ->where('username', $validated['username'])
+                ->where('is_system_user', true)
+                ->first();
+        }
 
         // Timing attack protection: Always perform password hash comparison
         // even when user doesn't exist, to prevent timing-based username enumeration
@@ -546,7 +556,7 @@ class IdentityController extends BaseController
         // Check if user has access to the specified partition
         // System admins can access any partition without explicit assignment
         // Use consistent error message to prevent partition enumeration
-        if (! $user->is_system_user && ! $user->partitions()->where('partition_id', $validated['partition_id'])->exists()) {
+        if (! $user->is_system_user && $user->partition_id !== $validated['partition_id']) {
             return $this->errorResponse('Invalid credentials', 401);
         }
 

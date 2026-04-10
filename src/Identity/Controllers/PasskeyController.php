@@ -282,7 +282,7 @@ class PasskeyController extends BaseController
             );
 
             // Check if user has access to the specified partition
-            if (!$user->is_system_user && !$user->partitions()->where('partition_id', $validated['partition_id'])->exists()) {
+            if (!$user->is_system_user && $user->partition_id !== $validated['partition_id']) {
                 return $this->errorResponse('Invalid credentials', 401);
             }
 
