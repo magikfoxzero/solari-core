@@ -7,63 +7,32 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * PasswordResetToken model for secure password reset flow.
  *
- * Note: This model uses email as the primary key (not UUID) since
- * only one reset token per email address is allowed at a time.
+ * Uses composite primary key (email, partition_id) since the same email
+ * can exist in multiple partitions with separate reset tokens.
  */
 class PasswordResetToken extends Model
 {
-    /**
-     * The table associated with the model.
-     *
-     * @var string
-     */
     protected $table = 'password_reset_tokens';
 
     /**
-     * The primary key for the model.
-     *
-     * @var string
+     * Composite primary key — Eloquent doesn't natively support composite PKs,
+     * so we disable auto-incrementing and use manual queries where needed.
      */
     protected $primaryKey = 'email';
 
-    /**
-     * The "type" of the primary key ID.
-     *
-     * @var string
-     */
     protected $keyType = 'string';
 
-    /**
-     * Indicates if the IDs are auto-incrementing.
-     *
-     * @var bool
-     */
     public $incrementing = false;
 
-    /**
-     * Indicates if the model should be timestamped.
-     * We only use created_at, not updated_at.
-     *
-     * @var bool
-     */
     public $timestamps = false;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array
-     */
     protected $fillable = [
         'email',
+        'partition_id',
         'token',
         'created_at',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array
-     */
     protected $casts = [
         'created_at' => 'datetime',
     ];
@@ -87,10 +56,18 @@ class PasswordResetToken extends Model
 
     /**
      * Get the user associated with this reset token.
+     * Scoped to partition for multi-tenant isolation.
      */
     public function user()
     {
-        return IdentityUser::where('email', $this->email)->first();
+        $query = IdentityUser::withoutGlobalScope('partition')
+            ->where('email', $this->email);
+
+        if ($this->partition_id) {
+            $query->where('partition_id', $this->partition_id);
+        }
+
+        return $query->first();
     }
 
     /**

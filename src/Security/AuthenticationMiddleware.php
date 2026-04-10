@@ -36,7 +36,7 @@ class AuthenticationMiddleware
             $wsToken = $request->header('X-WS-Token');
             $tokenData = Cache::get("ws_token:{$wsToken}");
             if ($tokenData) {
-                $user = IdentityUser::where('record_id', $tokenData['user_id'])->first();
+                $user = IdentityUser::withoutGlobalScope('partition')->where('record_id', $tokenData['user_id'])->first();
                 if ($user) {
                     $request->attributes->set('authenticated_user', $user);
                     $request->attributes->set('partition_id', $tokenData['partition_id'] ?? null);
@@ -155,11 +155,11 @@ class AuthenticationMiddleware
                     }
 
                     // Check if user has access to this partition (system users have access to all partitions)
-                    if (! $user->is_system_user && ! $user->partitions()->where('partition_id', $partitionId)->exists()) {
+                    if (! $user->is_system_user && $user->partition_id !== $partitionId) {
                         Log::warning('Authentication attempt without partition access', [
                             'user_id' => $user->record_id,
                             'partition_id' => $partitionId,
-                            'partition_count' => $user->partitions->count(),
+                            'user_partition_id' => $user->partition_id,
                             'path' => $request->path(),
                         ]);
 
@@ -604,10 +604,10 @@ class AuthenticationMiddleware
                 }
             }
 
-            // Find user by username (sub claim)
+            // Find user by user_id claim (unique across all partitions)
             // Bypass partition scope since auth happens before partition context is established
             $user = IdentityUser::withoutGlobalScope('partition')
-                ->where('username', $payload['sub'])
+                ->where('record_id', $payload['user_id'])
                 ->first();
 
             if (! $user) {
@@ -616,7 +616,7 @@ class AuthenticationMiddleware
 
             // Verify partition access if specified in token
             if (isset($payload['partition_id']) && ! $user->is_system_user) {
-                if (! $user->partitions()->where('partition_id', $payload['partition_id'])->exists()) {
+                if ($user->partition_id !== $payload['partition_id']) {
                     return null;
                 }
             }

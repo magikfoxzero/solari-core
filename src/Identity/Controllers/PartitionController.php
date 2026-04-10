@@ -470,8 +470,11 @@ class PartitionController extends BaseController
             }
         }
 
-        // Bypass partition scope - the pivot table defines partition membership
-        $users = $partition->users()->withoutGlobalScope('partition')->with(['groups', 'permissions'])->get();
+        // Query users directly by partition_id column (full multi-tenant isolation)
+        $users = IdentityUser::withoutGlobalScope('partition')
+            ->where('partition_id', $partition->record_id)
+            ->with(['groups', 'permissions'])
+            ->get();
 
         return $this->successResponse($users);
     }
@@ -511,21 +514,15 @@ class PartitionController extends BaseController
             }
         }
 
-        // Use transaction with locking to prevent race conditions
+        // Update user's partition_id (full multi-tenant isolation)
         try {
-            DB::transaction(function () use ($partition, $userId) {
-                // Lock the pivot table row to prevent concurrent modifications
-                $exists = DB::table('identity_user_partitions')
-                    ->where('partition_id', $partition->record_id)
-                    ->where('user_id', $userId)
-                    ->lockForUpdate()
-                    ->exists();
-
-                if ($exists) {
+            DB::transaction(function () use ($user, $partition) {
+                if ($user->partition_id === $partition->record_id) {
                     throw new \RuntimeException('User already in partition');
                 }
 
-                $partition->users()->attach($userId);
+                $user->partition_id = $partition->record_id;
+                $user->save();
             });
         } catch (\RuntimeException $e) {
             // Domain-specific error - safe to return specific message
@@ -577,32 +574,16 @@ class PartitionController extends BaseController
             return $this->errorResponse('Cannot remove yourself from partition', 400);
         }
 
-        // Use transaction with locking to prevent race conditions
+        // Verify user belongs to this partition
+        if ($user->partition_id !== $partition->record_id) {
+            return $this->errorResponse('User not in partition', 400);
+        }
+
+        // Deactivate user (full multi-tenant isolation — user belongs to exactly one partition)
         try {
-            DB::transaction(function () use ($partition, $user, $userId) {
-                // Lock the user's partition associations to prevent concurrent modifications
-                $userPartitionCount = DB::table('identity_user_partitions')
-                    ->where('user_id', $userId)
-                    ->lockForUpdate()
-                    ->count();
-
-                // Check if user is in the partition
-                $inPartition = DB::table('identity_user_partitions')
-                    ->where('partition_id', $partition->record_id)
-                    ->where('user_id', $userId)
-                    ->lockForUpdate()
-                    ->exists();
-
-                if (! $inPartition) {
-                    throw new \RuntimeException('User not in partition');
-                }
-
-                // Prevent removing the last partition from a user
-                if ($userPartitionCount <= 1) {
-                    throw new \RuntimeException('Cannot remove last partition from user');
-                }
-
-                $partition->users()->detach($userId);
+            DB::transaction(function () use ($user) {
+                $user->is_active = false;
+                $user->save();
             });
         } catch (\RuntimeException $e) {
             // Domain-specific error - safe to return specific message
@@ -655,36 +636,19 @@ class PartitionController extends BaseController
             // Get all available plugins from the legacy PluginRegistry
             $allPlugins = $registry->getAll();
 
-            // Include modules from ModuleRegistry that aren't already registered as plugins
+            // Include all discovered/registered modules (in-process + discovered)
             $moduleRegistry = app(\NewSolari\Core\Module\ModuleRegistry::class);
-            foreach ($moduleRegistry->getAllModules() as $module) {
-                $modulePluginId = $module->getId() . '-' . $module->getType();
-                if (!isset($allPlugins[$modulePluginId])) {
-                    $allPlugins[$modulePluginId] = [
-                        'name' => $module->getName(),
-                        'type' => $module->getType(),
-                        'version' => $module->getVersion(),
-                        'description' => '',
-                        'routes' => [],
-                        'permissions' => [],
-                        'dependencies' => $module->getDependencies(),
-                    ];
-                }
-            }
-
-            // Include remote/extracted services from config
-            $remoteServices = config('modules.remote_services', []);
-            foreach ($remoteServices as $service) {
-                $remotePluginId = ($service['id'] ?? '') . '-' . ($service['type'] ?? 'mini-app');
+            foreach ($moduleRegistry->getAllModulesWithManifest() as $mod) {
+                $remotePluginId = $mod['id'] . '-' . ($mod['type'] ?? 'mini-app');
                 if (!isset($allPlugins[$remotePluginId])) {
                     $allPlugins[$remotePluginId] = [
-                        'name' => $service['name'] ?? $service['id'] ?? 'Unknown',
-                        'type' => $service['type'] ?? 'mini-app',
-                        'version' => '1.0.0',
-                        'description' => $service['description'] ?? '',
+                        'name' => $mod['name'],
+                        'type' => $mod['type'],
+                        'version' => $mod['version'] ?? '1.0.0',
+                        'description' => $mod['description'] ?? '',
                         'routes' => [],
                         'permissions' => [],
-                        'dependencies' => [],
+                        'dependencies' => $mod['dependencies'] ?? [],
                     ];
                 }
             }

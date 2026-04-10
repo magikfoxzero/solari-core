@@ -87,7 +87,8 @@ class UserSoftBan extends BaseEntity
     public static function isUserSoftBanned(string $userId): bool
     {
         return Cache::remember(self::banCacheKey($userId), self::BAN_CACHE_TTL, function () use ($userId) {
-            return self::where('user_id', $userId)
+            return static::withoutGlobalScopes()
+                ->where('user_id', $userId)
                 ->where('deleted', false)
                 ->where(function ($query) {
                     $query->whereNull('banned_until')
@@ -99,10 +100,12 @@ class UserSoftBan extends BaseEntity
 
     /**
      * Get the active soft ban for a user, or null if not banned.
+     * Uses withoutGlobalScopes() so the check is partition-agnostic.
      */
     public static function getActiveBan(string $userId): ?self
     {
-        return self::where('user_id', $userId)
+        return static::withoutGlobalScopes()
+            ->where('user_id', $userId)
             ->where('deleted', false)
             ->where(function ($query) {
                 $query->whereNull('banned_until')

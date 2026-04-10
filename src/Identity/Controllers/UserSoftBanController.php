@@ -40,17 +40,17 @@ class UserSoftBanController extends BaseController
                 return [
                     'record_id' => $ban->record_id,
                     'user_id' => $ban->user_id,
-                    'username' => $ban->user->username ?? 'Unknown User',
                     'banned_by' => $ban->banned_by,
-                    'banned_by_username' => $ban->bannedByUser->username ?? 'Unknown User',
                     'reason' => $ban->reason,
                     'banned_until' => $ban->banned_until?->toIso8601String(),
                     'created_at' => $ban->created_at?->toIso8601String(),
+                    'user' => $ban->user ? ['record_id' => $ban->user->record_id, 'username' => $ban->user->username] : null,
+                    'banned_by_user' => $ban->bannedByUser ? ['record_id' => $ban->bannedByUser->record_id, 'username' => $ban->bannedByUser->username] : null,
                 ];
             })->toArray();
 
             return $this->successResponse([
-                'data' => $data,
+                'soft_bans' => $data,
                 'count' => count($data),
             ]);
         } catch (\Exception $e) {
@@ -101,7 +101,7 @@ class UserSoftBanController extends BaseController
                 })->toArray();
 
                 return $this->successResponse([
-                    'data' => $data,
+                    'soft_bans' => $data,
                     'count' => count($data),
                 ]);
             }
@@ -110,19 +110,23 @@ class UserSoftBanController extends BaseController
 
             if (!$ban || $ban->partition_id !== $partitionId) {
                 return $this->successResponse([
-                    'data' => null,
+                    'soft_ban' => null,
                     'is_banned' => false,
                 ]);
             }
 
+            $ban->load(['user:record_id,username', 'bannedByUser:record_id,username']);
+
             return $this->successResponse([
-                'data' => [
+                'soft_ban' => [
                     'record_id' => $ban->record_id,
                     'user_id' => $ban->user_id,
                     'banned_by' => $ban->banned_by,
                     'reason' => $ban->reason,
                     'banned_until' => $ban->banned_until?->toIso8601String(),
                     'created_at' => $ban->created_at?->toIso8601String(),
+                    'user' => $ban->user ? ['record_id' => $ban->user->record_id, 'username' => $ban->user->username] : null,
+                    'banned_by_user' => $ban->bannedByUser ? ['record_id' => $ban->bannedByUser->record_id, 'username' => $ban->bannedByUser->username] : null,
                 ],
                 'is_banned' => true,
             ]);
@@ -194,10 +198,20 @@ class UserSoftBanController extends BaseController
                 'duration_days' => $durationDays,
             ]);
 
+            $ban->load(['user:record_id,username', 'bannedByUser:record_id,username']);
+
             return $this->successResponse([
+                'soft_ban' => [
+                    'record_id' => $ban->record_id,
+                    'user_id' => $ban->user_id,
+                    'banned_by' => $ban->banned_by,
+                    'reason' => $ban->reason,
+                    'banned_until' => $ban->banned_until?->toIso8601String(),
+                    'created_at' => $ban->created_at?->toIso8601String(),
+                    'user' => $ban->user ? ['record_id' => $ban->user->record_id, 'username' => $ban->user->username] : null,
+                    'banned_by_user' => $ban->bannedByUser ? ['record_id' => $ban->bannedByUser->record_id, 'username' => $ban->bannedByUser->username] : null,
+                ],
                 'message' => 'User soft-banned successfully',
-                'record_id' => $ban->record_id,
-                'banned_until' => $ban->banned_until?->toIso8601String(),
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to soft-ban user', [

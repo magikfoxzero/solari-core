@@ -122,6 +122,14 @@ Route::middleware(['auth.api', 'module.enabled:auth'])->prefix('auth')->group(fu
 // Module manifest (authenticated, no specific permission required)
 Route::middleware(['auth.api'])->get('/modules/frontend-manifest', [ModuleController::class, 'frontendManifest']);
 
+// Soft ban routes (admin only) - must be before identity {id} wildcard routes
+Route::middleware(['auth.api', 'permission:users.manage'])->prefix('users')->group(function () {
+    Route::get('/soft-banned', [\NewSolari\Core\Identity\Controllers\UserSoftBanController::class, 'index']);
+    Route::get('/{userId}/soft-ban', [\NewSolari\Core\Identity\Controllers\UserSoftBanController::class, 'show']);
+    Route::post('/{userId}/soft-ban', [\NewSolari\Core\Identity\Controllers\UserSoftBanController::class, 'store']);
+    Route::delete('/{userId}/soft-ban', [\NewSolari\Core\Identity\Controllers\UserSoftBanController::class, 'destroy']);
+});
+
 // Identity system routes with authentication middleware
 Route::middleware(['auth.api'])->group(function () {
     // Users routes with permissions

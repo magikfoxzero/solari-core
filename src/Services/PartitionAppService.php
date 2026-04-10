@@ -42,36 +42,19 @@ class PartitionAppService
             return $manifest;
         }
 
-        // Check ModuleRegistry — module IDs use format "{id}-{type}"
+        // Check ModuleRegistry (in-process + discovered modules) — IDs use format "{id}-{type}"
         $moduleRegistry = app(\NewSolari\Core\Module\ModuleRegistry::class);
-        foreach ($moduleRegistry->getAllModules() as $module) {
-            $modulePluginId = $module->getId() . '-' . $module->getType();
-            if ($modulePluginId === $pluginId) {
+        foreach ($moduleRegistry->getAllModulesWithManifest() as $mod) {
+            $candidatePluginId = $mod['id'] . '-' . ($mod['type'] ?? 'mini-app');
+            if ($candidatePluginId === $pluginId) {
                 return [
-                    'name' => $module->getName(),
-                    'type' => $module->getType(),
-                    'version' => $module->getVersion(),
-                    'description' => '',
+                    'name' => $mod['name'],
+                    'type' => $mod['type'],
+                    'version' => $mod['version'] ?? '1.0.0',
+                    'description' => $mod['description'] ?? '',
                     'routes' => [],
                     'permissions' => [],
-                    'dependencies' => $module->getDependencies(),
-                ];
-            }
-        }
-
-        // Check remote services config
-        $remoteServices = config('modules.remote_services', []);
-        foreach ($remoteServices as $service) {
-            $remotePluginId = ($service['id'] ?? '') . '-' . ($service['type'] ?? 'mini-app');
-            if ($remotePluginId === $pluginId) {
-                return [
-                    'name' => $service['name'] ?? $service['id'] ?? 'Unknown',
-                    'type' => $service['type'] ?? 'mini-app',
-                    'version' => '1.0.0',
-                    'description' => $service['description'] ?? '',
-                    'routes' => [],
-                    'permissions' => [],
-                    'dependencies' => [],
+                    'dependencies' => $mod['dependencies'] ?? [],
                 ];
             }
         }

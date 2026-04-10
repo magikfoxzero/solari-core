@@ -218,7 +218,7 @@ class PasskeyService
     /**
      * Create authentication options.
      */
-    public function createAuthenticationOptions(?string $username = null, ?string $rpId = null): array
+    public function createAuthenticationOptions(?string $username = null, ?string $rpId = null, ?string $partitionId = null): array
     {
         $rpId = $rpId ?: config('passkeys.rp_id') ?: request()->getHost();
 
@@ -230,9 +230,12 @@ class PasskeyService
         $userId = null;
 
         if ($username) {
-            $user = IdentityUser::withoutGlobalScope('partition')
-                ->where('username', $username)
-                ->first();
+            $query = IdentityUser::withoutGlobalScope('partition')
+                ->where('username', $username);
+            if ($partitionId) {
+                $query->where('partition_id', $partitionId);
+            }
+            $user = $query->first();
 
             if ($user) {
                 $userId = $user->record_id;
@@ -277,9 +280,6 @@ class PasskeyService
         if (!$challengeData) {
             throw new \RuntimeException('Authentication challenge not found or expired');
         }
-
-        // Delete challenge after retrieval (single use)
-        Cache::forget($challengeKey);
 
         $storedChallenge = $challengeData['challenge'];
 
@@ -358,6 +358,9 @@ class PasskeyService
             host: $currentHost,
             userHandle: $user->record_id
         );
+
+        // Verification passed — delete single-use challenge
+        Cache::forget($challengeKey);
 
         // Update sign count
         $newSignCount = $publicKeyCredential->response->authenticatorData->signCount;

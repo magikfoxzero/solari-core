@@ -59,33 +59,17 @@ class PartitionAppsController extends BaseController
             // Get all available plugins from the legacy PluginRegistry
             $allPlugins = $this->registry->getAll();
 
-            // Also include modules from the ModuleRegistry (extracted/remote services)
-            // that aren't already registered as plugins
+            // Include all discovered/registered modules
             $moduleRegistry = app(\NewSolari\Core\Module\ModuleRegistry::class);
-            foreach ($moduleRegistry->getAllModules() as $module) {
-                $modulePluginId = $module->getId() . '-' . $module->getType();
-                if (!isset($allPlugins[$modulePluginId])) {
-                    $allPlugins[$modulePluginId] = [
-                        'name' => $module->getName(),
-                        'type' => $module->getType(),
-                        'version' => $module->getVersion(),
-                        'description' => '',
-                        'dependencies' => $module->getDependencies(),
-                    ];
-                }
-            }
-
-            // Also include remote services from config
-            $remoteServices = config('modules.remote_services', []);
-            foreach ($remoteServices as $service) {
-                $remotePluginId = ($service['id'] ?? '') . '-' . ($service['type'] ?? 'mini-app');
+            foreach ($moduleRegistry->getAllModulesWithManifest() as $mod) {
+                $remotePluginId = $mod['id'] . '-' . ($mod['type'] ?? 'mini-app');
                 if (!isset($allPlugins[$remotePluginId])) {
                     $allPlugins[$remotePluginId] = [
-                        'name' => $service['name'] ?? $service['id'] ?? 'Unknown',
-                        'type' => $service['type'] ?? 'mini-app',
-                        'version' => '1.0.0',
-                        'description' => $service['description'] ?? '',
-                        'dependencies' => [],
+                        'name' => $mod['name'],
+                        'type' => $mod['type'],
+                        'version' => $mod['version'] ?? '1.0.0',
+                        'description' => $mod['description'] ?? '',
+                        'dependencies' => $mod['dependencies'] ?? [],
                     ];
                 }
             }

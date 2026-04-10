@@ -81,5 +81,13 @@ class CoreServiceProvider extends ServiceProvider
 
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
         $this->loadRoutesFrom(__DIR__ . '/../routes/api.php');
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                \NewSolari\Core\Module\Console\ModuleClearCacheCommand::class,
+                \NewSolari\Core\Module\Console\ModuleListCommand::class,
+                \NewSolari\Core\Module\Console\SoftBanExpireCommand::class,
+            ]);
+        }
     }
 }

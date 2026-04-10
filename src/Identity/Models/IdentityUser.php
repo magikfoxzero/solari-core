@@ -11,6 +11,7 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use NewSolari\Core\Identity\Models\UserSoftBan;
 
 class IdentityUser extends BaseEntity implements Authenticatable
 {
@@ -144,8 +145,8 @@ class IdentityUser extends BaseEntity implements Authenticatable
      * @var array
      */
     protected $validations = [
-        'username' => 'required|string|max:255|unique:identity_users',
-        'email' => 'nullable|email|max:255|unique:identity_users',
+        'username' => 'required|string|max:255',
+        'email' => 'nullable|email|max:255',
         // NOTE: password_hash is nullable to support passkeys_only mode where users
         // register without a password. The raw password is validated in the controller
         // before passing to createWithValidation. The setPasswordHashAttribute mutator hashes
@@ -934,5 +935,13 @@ class IdentityUser extends BaseEntity implements Authenticatable
                 }
             }
         }
+    }
+
+    /**
+     * Check if this user is currently soft-banned.
+     */
+    public function isSoftBanned(): bool
+    {
+        return UserSoftBan::isUserSoftBanned($this->record_id);
     }
 }

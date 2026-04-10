@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
@@ -153,10 +154,10 @@ class IdentityController extends BaseController
             }
 
             $validated = $request->validate([
-                'username' => ['required', 'string', 'max:'.ApiConstants::STRING_MAX_LENGTH, 'unique:identity_users', new ValidUsername()],
-                'email' => 'nullable|email|max:'.ApiConstants::STRING_MAX_LENGTH.'|unique:identity_users',
-                'password' => ['required', 'string', $passwordRule],
                 'partition_id' => 'required|string|exists:identity_partitions,record_id',
+                'username' => ['required', 'string', 'max:'.ApiConstants::STRING_MAX_LENGTH, Rule::unique('identity_users')->where('partition_id', $request->input('partition_id', $partitionId)), new ValidUsername()],
+                'email' => ['nullable', 'email', 'max:'.ApiConstants::STRING_MAX_LENGTH, Rule::unique('identity_users')->where('partition_id', $request->input('partition_id', $partitionId))],
+                'password' => ['required', 'string', $passwordRule],
                 'first_name' => 'nullable|string|max:'.ApiConstants::STRING_MAX_LENGTH,
                 'last_name' => 'nullable|string|max:'.ApiConstants::STRING_MAX_LENGTH,
                 'is_active' => 'boolean',
@@ -278,8 +279,8 @@ class IdentityController extends BaseController
         }
 
         $validated = $request->validate([
-            'username' => 'sometimes|string|max:255|unique:identity_users,username,'.$id.',record_id',
-            'email' => 'nullable|email|max:'.ApiConstants::STRING_MAX_LENGTH.'|unique:identity_users,email,'.$id.',record_id',
+            'username' => ['sometimes', 'string', 'max:255', Rule::unique('identity_users', 'username')->where('partition_id', $targetUser->partition_id)->ignore($id, 'record_id')],
+            'email' => ['nullable', 'email', 'max:'.ApiConstants::STRING_MAX_LENGTH, Rule::unique('identity_users', 'email')->where('partition_id', $targetUser->partition_id)->ignore($id, 'record_id')],
             'first_name' => 'sometimes|nullable|string|max:'.ApiConstants::STRING_MAX_LENGTH,
             'last_name' => 'sometimes|nullable|string|max:'.ApiConstants::STRING_MAX_LENGTH,
             'is_active' => 'sometimes|boolean',
@@ -438,9 +439,12 @@ class IdentityController extends BaseController
             'timezone' => 'nullable|string|max:64|timezone:all',
         ]);
 
-        // Bypass partition scope - users can log in from any partition they have access to
+        // Find user by username in the requested partition
+        // Since usernames are now unique per partition (not globally),
+        // we must scope the lookup to the partition being logged into.
         $user = IdentityUser::withoutGlobalScope('partition')
             ->where('username', $validated['username'])
+            ->where('partition_id', $validated['partition_id'])
             ->first();
 
         // Timing attack protection: Always perform password hash comparison
@@ -624,11 +628,11 @@ class IdentityController extends BaseController
                 : 'nullable|string|same:password';
 
             $validated = $request->validate([
-                'username' => ['required', 'string', 'max:'.ApiConstants::STRING_MAX_LENGTH, 'unique:identity_users', new ValidUsername()],
-                'email' => 'nullable|email|max:'.ApiConstants::STRING_MAX_LENGTH.'|unique:identity_users',
+                'partition_id' => 'required|string|max:64',
+                'username' => ['required', 'string', 'max:'.ApiConstants::STRING_MAX_LENGTH, Rule::unique('identity_users')->where('partition_id', $request->input('partition_id')), new ValidUsername()],
+                'email' => ['nullable', 'email', 'max:'.ApiConstants::STRING_MAX_LENGTH, Rule::unique('identity_users')->where('partition_id', $request->input('partition_id'))],
                 'password' => $passwordRules,
                 'password_confirmation' => $passwordConfirmRules,
-                'partition_id' => 'required|string|max:64',
                 'first_name' => 'nullable|string|max:'.ApiConstants::STRING_MAX_LENGTH,
                 'last_name' => 'nullable|string|max:'.ApiConstants::STRING_MAX_LENGTH,
             ]);
@@ -1234,19 +1238,20 @@ class IdentityController extends BaseController
             }
         }
 
-        // Look up the user from the token's subject claim
-        if (! isset($decoded->sub)) {
-            $errorResponse = $this->errorResponse('Invalid token: missing subject', 401);
+        // Look up the user from the token's user_id claim
+        if (! isset($decoded->user_id)) {
+            $errorResponse = $this->errorResponse('Invalid token: missing user_id', 401);
 
             return $this->clearAuthCookies($errorResponse);
         }
 
+        // Look up user by user_id (not username — username is partition-scoped, not globally unique)
         $user = IdentityUser::withoutGlobalScope('partition')
-            ->where('username', $decoded->sub)
+            ->where('record_id', $decoded->user_id ?? '')
             ->first();
 
         if (! $user) {
-            Log::warning('Token refresh failed: user not found', ['username' => $decoded->sub]);
+            Log::warning('Token refresh failed: user not found', ['user_id' => $decoded->user_id ?? 'missing']);
             $errorResponse = $this->errorResponse('User not found', 401);
 
             return $this->clearAuthCookies($errorResponse);
@@ -1374,6 +1379,7 @@ class IdentityController extends BaseController
         try {
             $validated = $request->validate([
                 'email' => 'required|email|max:'.ApiConstants::STRING_MAX_LENGTH,
+                'partition_id' => 'nullable|string|max:64',
             ]);
         } catch (ValidationException $e) {
             return $this->handleValidationException($e);
@@ -1382,7 +1388,7 @@ class IdentityController extends BaseController
         $emailService = app(\NewSolari\Core\Services\EmailSecurityService::class);
 
         // Send the email (or pretend to, if user doesn't exist)
-        $emailService->sendPasswordResetEmail($validated['email']);
+        $emailService->sendPasswordResetEmail($validated['email'], $validated['partition_id'] ?? null);
 
         // Always return success to prevent email enumeration
         return $this->successResponse([
@@ -1421,8 +1427,8 @@ class IdentityController extends BaseController
         $user->password_hash = $validated['password'];
         $user->save();
 
-        // Consume the token
-        $emailService->consumePasswordResetToken($validated['email']);
+        // Consume the token (scoped to user's partition)
+        $emailService->consumePasswordResetToken($validated['email'], $user->partition_id);
 
         Log::info('Password reset successfully', [
             'user_id' => $user->record_id,
@@ -1485,6 +1491,7 @@ class IdentityController extends BaseController
         try {
             $validated = $request->validate([
                 'email' => 'required|email|max:'.ApiConstants::STRING_MAX_LENGTH,
+                'partition_id' => 'nullable|string|max:64',
             ]);
         } catch (ValidationException $e) {
             return $this->handleValidationException($e);
@@ -1493,7 +1500,7 @@ class IdentityController extends BaseController
         $emailService = app(\NewSolari\Core\Services\EmailSecurityService::class);
 
         // Resend the email (or pretend to, if user doesn't exist)
-        $emailService->resendVerificationEmail($validated['email']);
+        $emailService->resendVerificationEmail($validated['email'], $validated['partition_id'] ?? null);
 
         // Always return success to prevent email enumeration
         return $this->successResponse([

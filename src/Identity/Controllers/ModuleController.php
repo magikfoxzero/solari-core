@@ -16,40 +16,16 @@ class ModuleController extends BaseController
         $this->getAuthenticatedUser($request);
 
         $registry = app(ModuleRegistry::class);
+        $allModules = $registry->getAllModulesWithManifest();
+
         $modules = [];
-
-        // In-process modules (loaded as Composer packages)
-        foreach ($registry->getAllModules() as $module) {
-            if ($registry->isEnabled($module->getId())) {
-                $manifest = $module->getFrontendManifest();
-                if ($manifest !== null) {
-                    $modules[] = [
-                        'id' => $module->getId(),
-                        'name' => $module->getName(),
-                        'type' => $module->getType(),
-                        'frontend' => $manifest,
-                    ];
-                }
-            }
-        }
-
-        // Remote/extracted services (not loaded as packages, but frontend needs them)
-        $remoteServices = config('modules.remote_services', []);
-        foreach ($remoteServices as $service) {
-            if (!($service['enabled'] ?? true)) {
-                continue;
-            }
-            // Skip if already registered as an in-process module
-            $alreadyRegistered = collect($modules)->contains('id', $service['id']);
-            if ($alreadyRegistered) {
-                continue;
-            }
-            if (!empty($service['frontend'])) {
+        foreach ($allModules as $mod) {
+            if (!empty($mod['frontend'])) {
                 $modules[] = [
-                    'id' => $service['id'],
-                    'name' => $service['name'],
-                    'type' => $service['type'],
-                    'frontend' => $service['frontend'],
+                    'id' => $mod['id'],
+                    'name' => $mod['name'],
+                    'type' => $mod['type'],
+                    'frontend' => $mod['frontend'],
                 ];
             }
         }

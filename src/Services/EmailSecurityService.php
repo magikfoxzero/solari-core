@@ -78,12 +78,15 @@ class EmailSecurityService
      * @param  string  $email  The user's email address
      * @return string|null The raw token (to send to user), or null if email not found
      */
-    public function createPasswordResetToken(string $email): ?string
+    public function createPasswordResetToken(string $email, ?string $partitionId = null): ?string
     {
         // Check if user exists with this email - bypass partition scope for auth flows
-        $user = IdentityUser::withoutGlobalScope('partition')
-            ->where('email', $email)
-            ->first();
+        $query = IdentityUser::withoutGlobalScope('partition')
+            ->where('email', $email);
+        if ($partitionId) {
+            $query->where('partition_id', $partitionId);
+        }
+        $user = $query->first();
         if (! $user) {
             Log::info('Password reset requested for non-existent email', [
                 'email_hash' => hash('sha256', $email), // Log hash, not actual email
@@ -105,12 +108,17 @@ class EmailSecurityService
         $rawToken = $this->generateSecureToken();
         $hashedToken = $this->hashToken($rawToken);
 
-        // Delete any existing token and create new one (atomic operation)
-        DB::transaction(function () use ($email, $hashedToken) {
-            PasswordResetToken::where('email', $email)->delete();
+        // Delete any existing token for this email+partition and create new one (atomic operation)
+        DB::transaction(function () use ($email, $partitionId, $hashedToken) {
+            $query = PasswordResetToken::where('email', $email);
+            if ($partitionId) {
+                $query->where('partition_id', $partitionId);
+            }
+            $query->delete();
 
             PasswordResetToken::create([
                 'email' => $email,
+                'partition_id' => $partitionId,
                 'token' => $hashedToken,
                 'created_at' => now(),
             ]);
@@ -166,9 +174,13 @@ class EmailSecurityService
      *
      * @param  string  $email  The user's email address
      */
-    public function consumePasswordResetToken(string $email): void
+    public function consumePasswordResetToken(string $email, ?string $partitionId = null): void
     {
-        PasswordResetToken::where('email', $email)->delete();
+        $query = PasswordResetToken::where('email', $email);
+        if ($partitionId) {
+            $query->where('partition_id', $partitionId);
+        }
+        $query->delete();
 
         Log::info('Password reset token consumed', [
             'email_hash' => hash('sha256', $email),
@@ -181,9 +193,9 @@ class EmailSecurityService
      * @param  string  $email  The user's email address
      * @return bool True if email was sent (or would have been sent), false otherwise
      */
-    public function sendPasswordResetEmail(string $email): bool
+    public function sendPasswordResetEmail(string $email, ?string $partitionId = null): bool
     {
-        $token = $this->createPasswordResetToken($email);
+        $token = $this->createPasswordResetToken($email, $partitionId);
 
         // Even if user doesn't exist, we return true to prevent enumeration
         if (! $token) {
@@ -191,9 +203,12 @@ class EmailSecurityService
         }
 
         // Bypass partition scope for auth flows
-        $user = IdentityUser::withoutGlobalScope('partition')
-            ->where('email', $email)
-            ->first();
+        $query = IdentityUser::withoutGlobalScope('partition')
+            ->where('email', $email);
+        if ($partitionId) {
+            $query->where('partition_id', $partitionId);
+        }
+        $user = $query->first();
         if (! $user) {
             return true;
         }
@@ -363,12 +378,16 @@ class EmailSecurityService
      * @param  string  $email  The user's email address
      * @return bool True if sent (or would have been sent), false otherwise
      */
-    public function resendVerificationEmail(string $email): bool
+    public function resendVerificationEmail(string $email, ?string $partitionId = null): bool
     {
-        // Bypass partition scope for auth flows
-        $user = IdentityUser::withoutGlobalScope('partition')
-            ->where('email', $email)
-            ->first();
+        $query = IdentityUser::withoutGlobalScope('partition')
+            ->where('email', $email);
+
+        if ($partitionId) {
+            $query->where('partition_id', $partitionId);
+        }
+
+        $user = $query->first();
 
         // Return true even if user doesn't exist to prevent enumeration
         if (! $user) {
@@ -379,13 +398,7 @@ class EmailSecurityService
             return true;
         }
 
-        // If user is already verified, still return true
-        if ($user->hasVerifiedEmail()) {
-            return true;
-        }
-
-        // Only send if user requires verification
-        if (! $user->requires_email_verification) {
+        if (! $user->requires_email_verification || $user->hasVerifiedEmail()) {
             return true;
         }
 

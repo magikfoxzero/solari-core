@@ -115,15 +115,15 @@ class CheckPartitionAppEnabled
      */
     protected function getPartitionId(Request $request): ?string
     {
-        // Try to get from request input/query first
-        $partitionId = $request->input('partition_id') ?? $request->query('partition_id');
+        // 1. Trusted attributes (set by upstream middleware)
+        $partitionId = $request->attributes->get('partition_id');
 
-        // Try X-Partition-ID header
+        // 2. Header (set by frontend — never read from POST body to prevent injection)
         if (! $partitionId) {
             $partitionId = $request->header('X-Partition-ID') ?? $request->header('X-Partition');
         }
 
-        // Try authenticated user's partition
+        // 3. Authenticated user's partition
         if (! $partitionId) {
             $user = $request->user() ?? $request->attributes->get('authenticated_user');
             if ($user) {

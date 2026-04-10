@@ -213,13 +213,17 @@ class PasskeyController extends BaseController
 
         $validated = $request->validate([
             'username' => 'nullable|string|max:' . ApiConstants::STRING_MAX_LENGTH,
+            'partition_id' => 'nullable|string|max:64',
         ]);
 
         // Check for orphan accounts when username is provided
         if (!empty($validated['username'])) {
-            $user = IdentityUser::withoutGlobalScope('partition')
-                ->where('username', $validated['username'])
-                ->first();
+            $query = IdentityUser::withoutGlobalScope('partition')
+                ->where('username', $validated['username']);
+            if (!empty($validated['partition_id'])) {
+                $query->where('partition_id', $validated['partition_id']);
+            }
+            $user = $query->first();
 
             if ($user && $user->isOrphanAccount()) {
                 Log::info('Orphan account detected during passkey authentication', [
@@ -238,7 +242,9 @@ class PasskeyController extends BaseController
 
         try {
             $options = $this->passkeyService->createAuthenticationOptions(
-                $validated['username'] ?? null
+                $validated['username'] ?? null,
+                null,
+                $validated['partition_id'] ?? null
             );
             return $this->successResponse($options);
         } catch (\Exception $e) {
