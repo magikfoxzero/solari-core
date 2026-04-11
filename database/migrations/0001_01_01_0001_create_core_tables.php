@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -388,7 +389,11 @@ return new class extends Migration
                 $table->string('user_id', 36);
                 $table->string('partition_id', 36);
                 $table->text('endpoint');
-                $table->string('endpoint_hash', 64)->storedAs('SHA2(endpoint, 256)');
+                if (DB::getDriverName() === 'sqlite') {
+                    $table->string('endpoint_hash', 64)->nullable();
+                } else {
+                    $table->string('endpoint_hash', 64)->storedAs('SHA2(endpoint, 256)');
+                }
                 $table->string('p256dh_key', 512);
                 $table->string('auth_key', 256);
                 $table->string('user_agent')->nullable();
