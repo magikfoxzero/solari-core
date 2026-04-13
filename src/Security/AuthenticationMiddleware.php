@@ -7,11 +7,13 @@ use NewSolari\Core\Identity\Models\IdentityUser;
 use Closure;
 use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
+use Firebase\JWT\JWK;
 use Firebase\JWT\Key;
 use Firebase\JWT\SignatureInvalidException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -535,7 +537,11 @@ class AuthenticationMiddleware
 
     /**
      * Validate Bearer token (JWT) and return the authenticated user.
-     * Uses firebase/php-jwt for proper JWT validation including expiration.
+     * Supports both HS256/HS512 (legacy symmetric) and RS256 (OIDC asymmetric) tokens.
+     *
+     * Algorithm confusion protection: the JWT header's `alg` and `kid` fields determine
+     * which validation path is used. RS256 requires a `kid` claim; HMAC tokens must NOT
+     * have one. Any other algorithm is rejected outright.
      *
      * @param  string  $token  The JWT token to validate
      * @param  bool  $allowPurposeTokens  Whether to allow tokens with a 'purpose' claim
@@ -543,85 +549,38 @@ class AuthenticationMiddleware
     protected function validateBearerToken(string $token, bool $allowPurposeTokens = false): ?IdentityUser
     {
         try {
-            // Check if this is a valid JWT token format
-            if (strpos($token, '.') === false) {
+            // Check if this is a valid JWT token format (must have at least header.payload.signature)
+            if (substr_count($token, '.') !== 2) {
                 return null;
             }
 
-            // Decode and validate JWT using firebase/php-jwt
-            // This automatically validates signature, expiration (exp), and not-before (nbf) claims
-            $decoded = JWT::decode($token, new Key(IdentityUser::getJwtSecret(), config('jwt.algorithm', 'HS256')));
-
-            // Convert to array for easier access
-            $payload = (array) $decoded;
-
-            // Verify required claims exist
-            if (! isset($payload['sub']) || ! isset($payload['exp'])) {
-                Log::warning('JWT missing required claims', ['has_sub' => isset($payload['sub']), 'has_exp' => isset($payload['exp'])]);
+            // Step 1: Decode the JWT header to determine algorithm before validation
+            $header = $this->decodeJwtHeader($token);
+            if (! $header) {
+                Log::warning('JWT header could not be decoded');
 
                 return null;
             }
 
-            // SECURITY: Reject tokens with a 'purpose' claim for general API access
-            // These are limited-purpose tokens (e.g., recovery, passkey_registration) that
-            // should only be accepted by specific endpoints (like passkey registration)
-            if (isset($payload['purpose'])) {
-                // Allow purpose tokens only for specific endpoints (e.g., passkey registration)
-                if (! $allowPurposeTokens) {
-                    Log::warning('JWT with limited purpose rejected for general API access', [
-                        'purpose' => $payload['purpose'],
-                        'jti' => $payload['jti'] ?? 'unknown',
-                    ]);
+            $alg = $header['alg'] ?? null;
+            $kid = $header['kid'] ?? null;
 
-                    return null;
-                }
-
-                // Validate the purpose is one we accept
-                $allowedPurposes = ['recovery', 'passkey_registration'];
-                if (! in_array($payload['purpose'], $allowedPurposes, true)) {
-                    Log::warning('JWT with unknown purpose rejected', [
-                        'purpose' => $payload['purpose'],
-                        'jti' => $payload['jti'] ?? 'unknown',
-                    ]);
-
-                    return null;
-                }
-
-                Log::debug('Limited purpose token accepted for passkey registration', [
-                    'purpose' => $payload['purpose'],
-                    'jti' => $payload['jti'] ?? 'unknown',
+            // Step 2: Route to the correct validation path based on algorithm + kid
+            if ($alg === 'RS256' && $kid !== null) {
+                // OIDC path: RS256 with kid → validate with JWKS public key
+                return $this->validateOidcToken($token, $allowPurposeTokens);
+            } elseif (in_array($alg, ['HS512', 'HS256'], true) && $kid === null) {
+                // Legacy path: HMAC without kid → validate with shared secret
+                return $this->validateHmacToken($token, $allowPurposeTokens);
+            } else {
+                // Reject: unsupported algorithm or algorithm/kid mismatch
+                Log::warning('JWT algorithm confusion rejected', [
+                    'alg' => $alg,
+                    'has_kid' => $kid !== null,
                 ]);
-            }
 
-            // Check if token is blacklisted (logout)
-            // The blacklist stores `true` at key `jwt_blacklist_{jti}`, so existence = blacklisted.
-            if (isset($payload['jti'])) {
-                $blacklistKey = 'jwt_blacklist_'.$payload['jti'];
-                if (Cache::has($blacklistKey)) {
-                    Log::info('JWT token is blacklisted', ['jti' => $payload['jti']]);
-
-                    return null;
-                }
-            }
-
-            // Find user by user_id claim (unique across all partitions)
-            // Bypass partition scope since auth happens before partition context is established
-            $user = IdentityUser::withoutGlobalScope('partition')
-                ->where('record_id', $payload['user_id'])
-                ->first();
-
-            if (! $user) {
                 return null;
             }
-
-            // Verify partition access if specified in token
-            if (isset($payload['partition_id']) && ! $user->is_system_user) {
-                if ($user->partition_id !== $payload['partition_id']) {
-                    return null;
-                }
-            }
-
-            return $user;
 
         } catch (ExpiredException $e) {
             Log::info('JWT token expired');
@@ -640,6 +599,345 @@ class AuthenticationMiddleware
             return null;
         } catch (\Exception $e) {
             Log::error('JWT validation failed', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Decode the JWT header without verifying the signature.
+     * Used only for algorithm routing — actual validation happens in the specific path.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function decodeJwtHeader(string $token): ?array
+    {
+        $segments = explode('.', $token);
+        if (count($segments) !== 3) {
+            return null;
+        }
+
+        $headerJson = base64_decode(strtr($segments[0], '-_', '+/'), true);
+        if ($headerJson === false) {
+            return null;
+        }
+
+        $header = json_decode($headerJson, true);
+        if (! is_array($header)) {
+            return null;
+        }
+
+        return $header;
+    }
+
+    /**
+     * Validate an HMAC-signed JWT (HS256/HS512) — the legacy symmetric path.
+     */
+    private function validateHmacToken(string $token, bool $allowPurposeTokens): ?IdentityUser
+    {
+        // Decode and validate JWT using firebase/php-jwt
+        // This automatically validates signature, expiration (exp), and not-before (nbf) claims
+        $decoded = JWT::decode($token, new Key(IdentityUser::getJwtSecret(), config('jwt.algorithm', 'HS256')));
+
+        return $this->processValidatedPayload((array) $decoded, $allowPurposeTokens);
+    }
+
+    /**
+     * Validate an RS256 OIDC token using JWKS public keys from the identity service.
+     */
+    private function validateOidcToken(string $token, bool $allowPurposeTokens): ?IdentityUser
+    {
+        // Fetch JWKS keys (three-tier cache: Redis → disk → HTTP)
+        $keys = $this->getJwksKeys();
+        if (empty($keys)) {
+            Log::error('OIDC: Failed to obtain JWKS keys');
+
+            return null;
+        }
+
+        // Decode and validate the token using the JWKS key set
+        // firebase/php-jwt will match the token's kid to the correct key
+        $decoded = JWT::decode($token, $keys);
+        $payload = (array) $decoded;
+
+        // Verify issuer claim matches configured OIDC issuer
+        $expectedIssuer = config('jwt.oidc.issuer');
+        if (! isset($payload['iss']) || $payload['iss'] !== $expectedIssuer) {
+            Log::warning('OIDC: Issuer mismatch', [
+                'expected' => $expectedIssuer,
+                'actual' => $payload['iss'] ?? 'missing',
+            ]);
+
+            return null;
+        }
+
+        // Verify audience (mandatory for OIDC tokens)
+        if (!isset($payload['aud']) || $payload['aud'] !== 'solari') {
+            Log::warning('OIDC JWT audience missing or mismatched', ['aud' => $payload['aud'] ?? 'missing']);
+
+            return null;
+        }
+
+        return $this->processValidatedPayload($payload, $allowPurposeTokens);
+    }
+
+    /**
+     * Process a validated JWT payload (shared by both HMAC and OIDC paths).
+     * Checks required claims, purpose tokens, blacklist, and loads the user.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function processValidatedPayload(array $payload, bool $allowPurposeTokens): ?IdentityUser
+    {
+        // Verify required claims exist
+        if (! isset($payload['sub']) || ! isset($payload['exp'])) {
+            Log::warning('JWT missing required claims', ['has_sub' => isset($payload['sub']), 'has_exp' => isset($payload['exp'])]);
+
+            return null;
+        }
+
+        // SECURITY: Reject tokens with a 'purpose' claim for general API access
+        // These are limited-purpose tokens (e.g., recovery, passkey_registration) that
+        // should only be accepted by specific endpoints (like passkey registration)
+        if (isset($payload['purpose'])) {
+            // Allow purpose tokens only for specific endpoints (e.g., passkey registration)
+            if (! $allowPurposeTokens) {
+                Log::warning('JWT with limited purpose rejected for general API access', [
+                    'purpose' => $payload['purpose'],
+                    'jti' => $payload['jti'] ?? 'unknown',
+                ]);
+
+                return null;
+            }
+
+            // Validate the purpose is one we accept
+            $allowedPurposes = ['recovery', 'passkey_registration'];
+            if (! in_array($payload['purpose'], $allowedPurposes, true)) {
+                Log::warning('JWT with unknown purpose rejected', [
+                    'purpose' => $payload['purpose'],
+                    'jti' => $payload['jti'] ?? 'unknown',
+                ]);
+
+                return null;
+            }
+
+            Log::debug('Limited purpose token accepted for passkey registration', [
+                'purpose' => $payload['purpose'],
+                'jti' => $payload['jti'] ?? 'unknown',
+            ]);
+        }
+
+        // Check if token is blacklisted (logout)
+        // The blacklist stores `true` at key `jwt_blacklist_{jti}`, so existence = blacklisted.
+        if (isset($payload['jti'])) {
+            $blacklistKey = 'jwt_blacklist_'.$payload['jti'];
+            if (Cache::has($blacklistKey)) {
+                Log::info('JWT token is blacklisted', ['jti' => $payload['jti']]);
+
+                return null;
+            }
+        }
+
+        // Find user by user_id or sub claim (unique across all partitions)
+        // OIDC tokens use 'sub' as the user identifier; legacy tokens use 'user_id'
+        $userId = $payload['user_id'] ?? $payload['sub'] ?? null;
+        if (! $userId) {
+            Log::warning('JWT missing user identifier (user_id or sub)');
+
+            return null;
+        }
+
+        // Bypass partition scope since auth happens before partition context is established
+        $user = IdentityUser::withoutGlobalScope('partition')
+            ->where('record_id', $userId)
+            ->first();
+
+        if (! $user) {
+            return null;
+        }
+
+        // Verify partition access if specified in token
+        if (isset($payload['partition_id']) && ! $user->is_system_user) {
+            if ($user->partition_id !== $payload['partition_id']) {
+                return null;
+            }
+        }
+
+        return $user;
+    }
+
+    /**
+     * Fetch JWKS keys with three-tier caching: Redis → disk → HTTP.
+     *
+     * @return array<string, Key> Associative array of kid → Key objects
+     */
+    private function getJwksKeys(): array
+    {
+        $cacheTtl = config('jwt.oidc.jwks_cache_ttl', 3600);
+
+        // Tier 1: Redis cache
+        $jwksData = Cache::get('oidc_jwks_keys');
+        if ($jwksData && is_array($jwksData)) {
+            try {
+                return JWK::parseKeySet($jwksData, 'RS256');
+            } catch (\Exception $e) {
+                Log::warning('OIDC: Redis-cached JWKS invalid, falling through', ['error' => $e->getMessage()]);
+            }
+        }
+
+        // Tier 2: Disk cache with HMAC integrity verification
+        $jwksData = $this->loadJwksFromDisk();
+        if ($jwksData) {
+            try {
+                $keys = JWK::parseKeySet($jwksData, 'RS256');
+                // Re-populate Redis cache
+                Cache::put('oidc_jwks_keys', $jwksData, $cacheTtl);
+
+                return $keys;
+            } catch (\Exception $e) {
+                Log::warning('OIDC: Disk-cached JWKS invalid, falling through', ['error' => $e->getMessage()]);
+            }
+        }
+
+        // Tier 3: HTTP fetch from JWKS endpoint
+        $jwksData = $this->fetchJwksFromEndpoint();
+        if ($jwksData) {
+            try {
+                $keys = JWK::parseKeySet($jwksData, 'RS256');
+                // Populate both caches
+                Cache::put('oidc_jwks_keys', $jwksData, $cacheTtl);
+                $this->saveJwksToDisk($jwksData);
+
+                return $keys;
+            } catch (\Exception $e) {
+                Log::error('OIDC: Fetched JWKS invalid', ['error' => $e->getMessage()]);
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Load JWKS from disk cache with HMAC integrity verification.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function loadJwksFromDisk(): ?array
+    {
+        $path = storage_path('framework/cache/jwks.json');
+        if (! file_exists($path)) {
+            return null;
+        }
+
+        $raw = file_get_contents($path);
+        if ($raw === false) {
+            return null;
+        }
+
+        $envelope = json_decode($raw, true);
+        if (! is_array($envelope) || ! isset($envelope['data']) || ! isset($envelope['hmac'])) {
+            Log::warning('OIDC: Disk JWKS cache missing required fields');
+
+            return null;
+        }
+
+        // Verify HMAC integrity using APP_KEY
+        $appKey = config('app.key');
+        if (! $appKey) {
+            Log::warning('OIDC: Cannot verify disk JWKS — APP_KEY not set');
+
+            return null;
+        }
+
+        $expectedHmac = hash_hmac('sha256', $envelope['data'], $appKey);
+        if (! hash_equals($expectedHmac, $envelope['hmac'])) {
+            Log::warning('OIDC: Disk JWKS cache HMAC verification failed (possible tampering)');
+            @unlink($path);
+
+            return null;
+        }
+
+        $jwksData = json_decode($envelope['data'], true);
+        if (! is_array($jwksData)) {
+            return null;
+        }
+
+        return $jwksData;
+    }
+
+    /**
+     * Save JWKS to disk cache with HMAC integrity protection.
+     *
+     * @param  array<string, mixed>  $jwksData
+     */
+    private function saveJwksToDisk(array $jwksData): void
+    {
+        $appKey = config('app.key');
+        if (! $appKey) {
+            return;
+        }
+
+        $dataJson = json_encode($jwksData);
+        $hmac = hash_hmac('sha256', $dataJson, $appKey);
+
+        $envelope = json_encode([
+            'data' => $dataJson,
+            'hmac' => $hmac,
+            'cached_at' => now()->toIso8601String(),
+        ]);
+
+        $dir = storage_path('framework/cache');
+        if (! is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        file_put_contents(storage_path('framework/cache/jwks.json'), $envelope, LOCK_EX);
+    }
+
+    /**
+     * Fetch JWKS from the identity service's well-known endpoint.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function fetchJwksFromEndpoint(): ?array
+    {
+        $jwksUri = config('jwt.oidc.jwks_uri');
+        if (! $jwksUri) {
+            Log::error('OIDC: jwks_uri not configured');
+
+            return null;
+        }
+
+        try {
+            $response = Http::timeout(5)->get($jwksUri);
+
+            if (! $response->successful()) {
+                Log::error('OIDC: JWKS endpoint returned non-success status', [
+                    'status' => $response->status(),
+                    'uri' => $jwksUri,
+                ]);
+
+                return null;
+            }
+
+            $jwksData = $response->json();
+            if (! is_array($jwksData) || ! isset($jwksData['keys'])) {
+                Log::error('OIDC: JWKS endpoint returned invalid data', ['uri' => $jwksUri]);
+
+                return null;
+            }
+
+            Log::info('OIDC: JWKS keys fetched from endpoint', [
+                'uri' => $jwksUri,
+                'key_count' => count($jwksData['keys']),
+            ]);
+
+            return $jwksData;
+        } catch (\Exception $e) {
+            Log::error('OIDC: Failed to fetch JWKS from endpoint', [
+                'uri' => $jwksUri,
+                'error' => $e->getMessage(),
+            ]);
 
             return null;
         }

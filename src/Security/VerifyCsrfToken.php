@@ -3,17 +3,20 @@
 namespace NewSolari\Core\Security;
 
 use Closure;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
  * CSRF validation using the double-submit cookie pattern.
  *
- * Compares the XSRF-TOKEN cookie value with the X-XSRF-TOKEN header.
- * Only enforced for state-changing requests (POST/PUT/PATCH/DELETE)
- * that are authenticated via httpOnly cookie (not Bearer token).
+ * The XSRF-TOKEN cookie is encrypted by Laravel's EncryptCookies middleware.
+ * The browser's JavaScript reads the encrypted value from document.cookie and
+ * sends it as the X-XSRF-TOKEN header. This middleware decrypts both the cookie
+ * (via EncryptCookies) and the header (explicitly) before comparing.
  *
  * Naturally exempt:
  * - GET/HEAD/OPTIONS (safe methods)
@@ -31,20 +34,50 @@ class VerifyCsrfToken
         }
 
         $csrfCookieName = config('jwt.csrf_cookie.name', 'XSRF-TOKEN');
+
+        // EncryptCookies middleware already decrypted the cookie
         $cookieToken = $request->cookie($csrfCookieName);
-        $headerToken = $request->header('X-XSRF-TOKEN');
+
+        // The header contains the encrypted blob that JavaScript read from document.cookie.
+        // We must decrypt it to compare against the decrypted cookie value.
+        $headerToken = $this->decryptHeader($request->header('X-XSRF-TOKEN'));
 
         if (! $cookieToken || ! $headerToken) {
             return $this->reject($request, 'missing');
         }
 
-        // Str::random(64) produces a-zA-Z0-9 only, so no encoding issues.
-        // Direct comparison is safe; urldecode would be a no-op.
         if (! hash_equals($cookieToken, $headerToken)) {
             return $this->reject($request, 'mismatch');
         }
 
         return $next($request);
+    }
+
+    /**
+     * Decrypt the X-XSRF-TOKEN header value.
+     * Matches Laravel's built-in VerifyCsrfToken behavior (framework line 155).
+     */
+    private function decryptHeader(?string $header): ?string
+    {
+        if (! $header) {
+            return null;
+        }
+
+        try {
+            $value = App::make('encrypter')->decrypt($header, false);
+
+            // Strip Laravel's cookie value prefix if present
+            if (class_exists(\Illuminate\Cookie\CookieValuePrefix::class)) {
+                $value = \Illuminate\Cookie\CookieValuePrefix::remove($value);
+            }
+
+            return $value;
+        } catch (DecryptException) {
+            // Decryption failed — the header is likely a plaintext CSRF token
+            // (set by the monolith which doesn't encrypt XSRF-TOKEN cookies).
+            // Return the raw value for direct comparison against the plaintext cookie.
+            return $header;
+        }
     }
 
     /**

@@ -163,4 +163,20 @@ return [
         'http_only' => false, // Must be readable by JavaScript
         'same_site' => env('JWT_COOKIE_SAME_SITE', 'lax'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | OIDC Configuration (Identity Service RS256 Tokens)
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for validating RS256 tokens issued by the identity service.
+    | These tokens are validated using JWKS public keys fetched from the
+    | identity service's well-known endpoint.
+    |
+    */
+    'oidc' => [
+        'issuer' => env('OIDC_ISSUER', 'https://auth.solarinet.org'),
+        'jwks_uri' => env('OIDC_JWKS_URI', 'http://127.0.0.1:8170/.well-known/jwks.json'),
+        'jwks_cache_ttl' => (int) env('OIDC_JWKS_CACHE_TTL', 3600),
+    ],
 ];
