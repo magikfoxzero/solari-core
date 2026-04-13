@@ -75,15 +75,6 @@ class CoreServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Exclude XSRF-TOKEN from cookie encryption across all services.
-        // The CSRF token is intentionally readable by JavaScript (httpOnly: false)
-        // and must be readable across services sharing the same domain.
-        // Encrypting it causes cross-service incompatibility when multiple Laravel apps
-        // (identity service, module services) handle requests on the same domain.
-        $this->app->resolving(\Illuminate\Cookie\Middleware\EncryptCookies::class, function ($middleware) {
-            $middleware->disableFor(config('jwt.csrf_cookie.name', 'XSRF-TOKEN'));
-        });
-
         // Register service token middleware alias for service-to-service auth
         // Available to all modules that need service-to-service endpoints
         $this->app['router']->aliasMiddleware(

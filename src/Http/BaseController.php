@@ -764,20 +764,18 @@ class BaseController extends Controller
             $cookieConfig['same_site']
         );
 
-        // Set XSRF-TOKEN as a raw cookie (bypassing Laravel's EncryptCookies middleware).
-        // This token must be readable by JavaScript and by other services sharing the same domain.
-        $csrfCookie = new \Symfony\Component\HttpFoundation\Cookie(
+        // Set CSRF token as readable cookie (JavaScript needs to read this)
+        $response->cookie(
             $csrfConfig['name'],
             $csrfToken,
-            time() + ($cookieExpirationMinutes * 60),
+            $cookieExpirationMinutes,
             $csrfConfig['path'],
             $csrfConfig['domain'],
             $csrfConfig['secure'],
-            $csrfConfig['http_only'],
+            $csrfConfig['http_only'], // false - JavaScript must read this
             false,
-            $csrfConfig['same_site'] ?? 'lax'
+            $csrfConfig['same_site']
         );
-        $response->headers->setCookie($csrfCookie);
 
         return $response;
     }
