@@ -31,16 +31,34 @@ class VerifyCsrfToken
         }
 
         $csrfCookieName = config('jwt.csrf_cookie.name', 'XSRF-TOKEN');
-        $cookieToken = $request->cookie($csrfCookieName);
         $headerToken = $request->header('X-XSRF-TOKEN');
+
+        // Try Laravel's decrypted cookie first (same-app cookies)
+        $cookieToken = $request->cookie($csrfCookieName);
+
+        // If decryption failed (cross-service cookie with different encryption context),
+        // read the raw value from $_COOKIE or from the raw Cookie header.
+        // The XSRF-TOKEN is intentionally NOT httpOnly (readable by JavaScript)
+        // and is NOT a secret — the double-submit pattern only requires that the
+        // cookie value matches the header value.
+        if (! $cookieToken) {
+            // Try $_COOKIE (production: populated by PHP from the HTTP Cookie header)
+            $cookieToken = $_COOKIE[$csrfCookieName] ?? null;
+        }
+        if (! $cookieToken) {
+            // Fallback: parse raw Cookie header (covers test environment + edge cases)
+            $rawCookies = $request->header('Cookie', '');
+            if (preg_match('/(?:^|;\s*)' . preg_quote($csrfCookieName, '/') . '=([^;]+)/', $rawCookies, $matches)) {
+                $cookieToken = urldecode($matches[1]);
+            }
+        }
 
         if (! $cookieToken || ! $headerToken) {
             return $this->reject($request, 'missing');
         }
 
-        // Str::random(64) produces a-zA-Z0-9 only, so no encoding issues.
-        // Direct comparison is safe; urldecode would be a no-op.
-        if (! hash_equals($cookieToken, $headerToken)) {
+        // Normalize: urldecode both values for consistent comparison
+        if (! hash_equals(urldecode($cookieToken), urldecode($headerToken))) {
             return $this->reject($request, 'mismatch');
         }
 
