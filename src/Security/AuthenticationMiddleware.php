@@ -634,9 +634,10 @@ class AuthenticationMiddleware
 
     /**
      * Validate an OIDC RS256 token from the identity service.
-     * Returns a UserContext (no database query needed — all data is in the JWT claims).
+     * Validates the signature and claims via JWKS, then loads the full IdentityUser
+     * from the database (same as legacy path) so Eloquent permissions work.
      */
-    private function validateOidcToken(string $token, bool $allowPurposeTokens): ?UserContext
+    private function validateOidcToken(string $token, bool $allowPurposeTokens): ?IdentityUser
     {
         $keys = $this->getJwksKeys();
         if (empty($keys)) {
@@ -690,7 +691,22 @@ class AuthenticationMiddleware
             }
         }
 
-        return UserContext::fromJwtClaims($decoded);
+        // Load the full user from DB so Eloquent permissions/groups work
+        // (same as legacy path — thin JWT, DB-loaded permissions)
+        $userId = $payload['user_id'] ?? $payload['sub'] ?? null;
+        if (! $userId) {
+            return null;
+        }
+
+        $user = IdentityUser::withoutGlobalScope('partition')
+            ->where('record_id', $userId)
+            ->first();
+
+        if (! $user) {
+            Log::warning('OIDC token valid but user not found in database', ['user_id' => $userId]);
+        }
+
+        return $user;
     }
 
     /**
