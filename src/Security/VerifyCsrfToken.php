@@ -3,8 +3,10 @@
 namespace NewSolari\Core\Security;
 
 use Closure;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -31,6 +33,7 @@ class VerifyCsrfToken
         }
 
         $csrfCookieName = config('jwt.csrf_cookie.name', 'XSRF-TOKEN');
+        // $request->cookie() returns the decrypted value (via EncryptCookies middleware)
         $cookieToken = $request->cookie($csrfCookieName);
         $headerToken = $request->header('X-XSRF-TOKEN');
 
@@ -38,9 +41,18 @@ class VerifyCsrfToken
             return $this->reject($request, 'missing');
         }
 
-        // Str::random(64) produces a-zA-Z0-9 only, so no encoding issues.
-        // Direct comparison is safe; urldecode would be a no-op.
-        if (! hash_equals($cookieToken, $headerToken)) {
+        // The header contains the encrypted cookie value that JavaScript read from document.cookie.
+        // Laravel's EncryptCookies encrypts cookies before sending them to the browser, so
+        // document.cookie returns the encrypted blob. We must decrypt the header to compare
+        // against the decrypted cookie value (same approach as Laravel's built-in VerifyCsrfToken).
+        try {
+            $decryptedHeader = Crypt::decrypt($headerToken, false);
+        } catch (DecryptException) {
+            // If decryption fails, try direct comparison (unencrypted cookie scenario)
+            $decryptedHeader = $headerToken;
+        }
+
+        if (! hash_equals($cookieToken, $decryptedHeader)) {
             return $this->reject($request, 'mismatch');
         }
 
