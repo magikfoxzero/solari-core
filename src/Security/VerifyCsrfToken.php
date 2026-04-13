@@ -3,35 +3,43 @@
 namespace NewSolari\Core\Security;
 
 use Closure;
-use Illuminate\Cookie\CookieValuePrefix;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
  * CSRF validation using the double-submit cookie pattern.
  *
- * The XSRF-TOKEN cookie is encrypted by Laravel's EncryptCookies middleware.
- * The browser's JavaScript reads the encrypted value from document.cookie and
- * sends it as the X-XSRF-TOKEN header. This middleware decrypts both and compares.
+ * Compares the XSRF-TOKEN cookie value with the X-XSRF-TOKEN header.
+ * Only enforced for state-changing requests (POST/PUT/PATCH/DELETE)
+ * that are authenticated via httpOnly cookie (not Bearer token).
+ *
+ * Naturally exempt:
+ * - GET/HEAD/OPTIONS (safe methods)
+ * - Requests without solari_access_token cookie (unauthenticated, webhooks, native apps)
  */
 class VerifyCsrfToken
 {
+    /**
+     * Handle an incoming request.
+     */
     public function handle(Request $request, Closure $next): Response
     {
         if ($this->shouldSkip($request)) {
             return $next($request);
         }
 
-        $cookieToken = $this->getTokenFromCookie($request);
-        $headerToken = $this->getTokenFromHeader($request);
+        $csrfCookieName = config('jwt.csrf_cookie.name', 'XSRF-TOKEN');
+        $cookieToken = $request->cookie($csrfCookieName);
+        $headerToken = $request->header('X-XSRF-TOKEN');
 
         if (! $cookieToken || ! $headerToken) {
             return $this->reject($request, 'missing');
         }
 
+        // Str::random(64) produces a-zA-Z0-9 only, so no encoding issues.
+        // Direct comparison is safe; urldecode would be a no-op.
         if (! hash_equals($cookieToken, $headerToken)) {
             return $this->reject($request, 'mismatch');
         }
@@ -40,50 +48,19 @@ class VerifyCsrfToken
     }
 
     /**
-     * Get the decrypted CSRF token from the cookie.
-     * EncryptCookies middleware has already decrypted it.
+     * Determine if CSRF validation should be skipped for this request.
      */
-    private function getTokenFromCookie(Request $request): ?string
-    {
-        $name = config('jwt.csrf_cookie.name', 'XSRF-TOKEN');
-
-        return $request->cookie($name);
-    }
-
-    /**
-     * Get the CSRF token from the X-XSRF-TOKEN header.
-     * The header contains the encrypted value that JavaScript read from document.cookie.
-     * We must decrypt it to compare against the decrypted cookie value.
-     */
-    private function getTokenFromHeader(Request $request): ?string
-    {
-        $header = $request->header('X-XSRF-TOKEN');
-        if (! $header) {
-            return null;
-        }
-
-        try {
-            $encrypter = App::make('encrypter');
-            $value = $encrypter->decrypt($header, false);
-
-            // Remove Laravel's cookie value prefix if present
-            if (class_exists(CookieValuePrefix::class)) {
-                $value = CookieValuePrefix::remove($value);
-            }
-
-            return $value;
-        } catch (\Exception) {
-            // If decryption fails, try using the raw value (unencrypted cookie scenario)
-            return $header;
-        }
-    }
-
     private function shouldSkip(Request $request): bool
     {
+        // Safe methods don't need CSRF protection
         if (in_array($request->method(), ['GET', 'HEAD', 'OPTIONS'])) {
             return true;
         }
 
+        // No cookie auth = no CSRF needed (unauthenticated, API client, or native app)
+        // Note: we intentionally do NOT skip based on Bearer token presence alone,
+        // because an attacker could add a dummy Authorization header to bypass CSRF.
+        // Native apps never send cookies (withCredentials=false), so they hit this check.
         $cookieName = config('jwt.cookie.name', 'solari_access_token');
         if (! $request->cookie($cookieName)) {
             return true;
@@ -92,6 +69,9 @@ class VerifyCsrfToken
         return false;
     }
 
+    /**
+     * Return a 403 response and log the CSRF failure.
+     */
     private function reject(Request $request, string $reason): JsonResponse
     {
         Log::warning('CSRF validation failed', [
