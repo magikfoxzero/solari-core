@@ -2,9 +2,8 @@
 
 namespace NewSolari\Core\Plugin;
 
-use NewSolari\Core\Identity\Contracts\AuthenticatedUserInterface;
-// TODO Phase 4: Replace IdentityPartition queries with IdentityApiClient::getPartition()
 use NewSolari\Core\Identity\Models\IdentityPartition;
+use NewSolari\Core\Identity\Models\IdentityUser;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -261,9 +260,9 @@ abstract class PluginBase implements PluginInterface
     /**
      * Check if user has permission for this plugin
      */
-    public function checkUserPermission(AuthenticatedUserInterface $user, string $permission): bool
+    public function checkUserPermission(IdentityUser $user, string $permission): bool
     {
-        if ($user->isSystemUser()) {
+        if ($user->is_system_user) {
             return true;
         }
 

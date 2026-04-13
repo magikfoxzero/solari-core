@@ -3,7 +3,7 @@
 namespace NewSolari\Core\Plugin;
 
 use NewSolari\Core\Entity\BaseEntity;
-use NewSolari\Core\Identity\Contracts\AuthenticatedUserInterface;
+use NewSolari\Core\Identity\Models\IdentityUser;
 use NewSolari\Core\Identity\Models\EntityRelationship;
 use NewSolari\Folders\Models\Folder;
 use Illuminate\Support\Facades\DB;
@@ -54,7 +54,7 @@ abstract class MiniAppBase extends PluginBase
      * Check if user can access data item.
      * Includes share-based access for entities that use the Shareable trait.
      */
-    public function checkDataAccess(BaseEntity $entity, AuthenticatedUserInterface $user, string $action = 'read'): bool
+    public function checkDataAccess(BaseEntity $entity, IdentityUser $user, string $action = 'read'): bool
     {
         // System admins can do anything
         if ($user->is_system_user) {
@@ -114,7 +114,7 @@ abstract class MiniAppBase extends PluginBase
      * Check if user can change privacy settings for an entity.
      * Only owner, partition admin, or system admin can make records public/private.
      */
-    public function canUserChangePrivacy(BaseEntity $entity, AuthenticatedUserInterface $user): bool
+    public function canUserChangePrivacy(BaseEntity $entity, IdentityUser $user): bool
     {
         // System admins can do anything
         if ($user->is_system_user) {
@@ -140,7 +140,7 @@ abstract class MiniAppBase extends PluginBase
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function validateData(array $data, string $operation, AuthenticatedUserInterface $user, ?BaseEntity $existingEntity = null): array
+    public function validateData(array $data, string $operation, IdentityUser $user, ?BaseEntity $existingEntity = null): array
     {
         $rules = $this->getValidationRules();
 
@@ -321,7 +321,7 @@ abstract class MiniAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function createDataItem(array $data, AuthenticatedUserInterface $user): BaseEntity
+    public function createDataItem(array $data, IdentityUser $user): BaseEntity
     {
         try {
             // Validate data
@@ -360,7 +360,7 @@ abstract class MiniAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function updateDataItem(BaseEntity $entity, array $data, AuthenticatedUserInterface $user): bool
+    public function updateDataItem(BaseEntity $entity, array $data, IdentityUser $user): bool
     {
         try {
             // Check if user can access this entity
@@ -397,7 +397,7 @@ abstract class MiniAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function deleteDataItem(BaseEntity $entity, AuthenticatedUserInterface $user): bool
+    public function deleteDataItem(BaseEntity $entity, IdentityUser $user): bool
     {
         try {
             // Check if user can access this entity
@@ -432,7 +432,7 @@ abstract class MiniAppBase extends PluginBase
      * @param  string|null  $partitionId  Override partition context (from X-Partition-ID header)
      * @return \Illuminate\Database\Eloquent\Builder
      */
-    public function getDataQuery(AuthenticatedUserInterface $user, array $filters = [], ?string $partitionId = null)
+    public function getDataQuery(IdentityUser $user, array $filters = [], ?string $partitionId = null)
     {
         $modelClass = $this->getDataModel();
         $query = $modelClass::query();
@@ -658,7 +658,7 @@ abstract class MiniAppBase extends PluginBase
     /**
      * Get count of data items accessible to user
      */
-    public function getDataCount(AuthenticatedUserInterface $user, array $filters = []): int
+    public function getDataCount(IdentityUser $user, array $filters = []): int
     {
         return $this->getDataQuery($user, $filters)->count();
     }

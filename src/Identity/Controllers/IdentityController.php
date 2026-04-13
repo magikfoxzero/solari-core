@@ -3,7 +3,6 @@ namespace NewSolari\Core\Identity\Controllers;
 
 use NewSolari\Core\Http\BaseController;
 use NewSolari\Core\Constants\ApiConstants;
-use NewSolari\Core\Identity\Contracts\AuthenticatedUserInterface;
 use NewSolari\Core\Identity\Models\Group;
 use NewSolari\Core\Identity\Models\IdentityPartition;
 use NewSolari\Core\Identity\Models\IdentityUser;
@@ -1063,8 +1062,8 @@ class IdentityController extends BaseController
         // Fallback: get user from request attributes (for API key auth or test middleware)
         if (! $userId) {
             $authenticatedUser = $request->attributes->get('authenticated_user');
-            if ($authenticatedUser instanceof AuthenticatedUserInterface) {
-                $userId = $authenticatedUser->getRecordId();
+            if ($authenticatedUser instanceof IdentityUser) {
+                $userId = $authenticatedUser->record_id;
             }
         }
 

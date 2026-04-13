@@ -7,7 +7,6 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use NewSolari\Core\Identity\Contracts\AuthenticatedUserInterface;
 use NewSolari\Core\Identity\Models\IdentityUser;
 
 /**
@@ -25,7 +24,7 @@ trait MiniAppControllerTrait
      * Get the authenticated user from the request.
      * This method must be implemented by the class using this trait.
      */
-    abstract protected function getAuthenticatedUser(Request $request): ?AuthenticatedUserInterface;
+    abstract protected function getAuthenticatedUser(Request $request): ?IdentityUser;
 
     /**
      * Get relations to be loaded (override in controller if needed)
@@ -151,13 +150,11 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof AuthenticatedUserInterface) {
+            if (! $user || ! $user instanceof IdentityUser) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
-            if ($user instanceof \Illuminate\Database\Eloquent\Model) {
-                $user->load('permissions', 'groups.permissions');
-            }
+            $user->load('permissions', 'groups.permissions');
 
             $permissionName = $this->getPermissionBaseName($plugin).'.'.$permissionAction;
             if (! $plugin->checkUserPermission($user, $permissionName)) {
@@ -209,13 +206,11 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof AuthenticatedUserInterface) {
+            if (! $user || ! $user instanceof IdentityUser) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
-            if ($user instanceof \Illuminate\Database\Eloquent\Model) {
-                $user->load('permissions', 'groups.permissions');
-            }
+            $user->load('permissions', 'groups.permissions');
 
             $permissionName = $this->getPermissionBaseName($plugin).'.'.$permissionAction;
             if (! $plugin->checkUserPermission($user, $permissionName)) {
@@ -265,7 +260,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof AuthenticatedUserInterface) {
+            if (! $user || ! $user instanceof IdentityUser) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -299,7 +294,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof AuthenticatedUserInterface) {
+            if (! $user || ! $user instanceof IdentityUser) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -348,7 +343,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof AuthenticatedUserInterface) {
+            if (! $user || ! $user instanceof IdentityUser) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -398,13 +393,11 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof AuthenticatedUserInterface) {
+            if (! $user || ! $user instanceof IdentityUser) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
-            if ($user instanceof \Illuminate\Database\Eloquent\Model) {
-                $user->load('permissions', 'groups.permissions');
-            }
+            $user->load('permissions', 'groups.permissions');
 
             $searchTerm = $request->get('q', '');
             // Exclude internal request attributes that should not be used as filters
@@ -466,13 +459,11 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof AuthenticatedUserInterface) {
+            if (! $user || ! $user instanceof IdentityUser) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
-            if ($user instanceof \Illuminate\Database\Eloquent\Model) {
-                $user->load('permissions', 'groups.permissions');
-            }
+            $user->load('permissions', 'groups.permissions');
 
             $permissionName = $this->getPermissionBaseName($plugin).'.'.$permissionAction;
             if (! $plugin->checkUserPermission($user, $permissionName)) {
@@ -533,13 +524,11 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof AuthenticatedUserInterface) {
+            if (! $user || ! $user instanceof IdentityUser) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
-            if ($user instanceof \Illuminate\Database\Eloquent\Model) {
-                $user->load('permissions', 'groups.permissions');
-            }
+            $user->load('permissions', 'groups.permissions');
 
             $permissionName = $this->getPermissionBaseName($plugin).'.'.$permissionAction;
             if (! $plugin->checkUserPermission($user, $permissionName)) {

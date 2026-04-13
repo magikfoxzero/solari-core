@@ -5,7 +5,6 @@ namespace NewSolari\Core\Identity\Models;
 use NewSolari\Core\Constants\ApiConstants;
 use NewSolari\Core\Entity\BaseEntity;
 use NewSolari\Core\Entity\Traits\SoftDeleteCascade;
-use NewSolari\Core\Identity\Contracts\AuthenticatedUserInterface;
 use Firebase\JWT\JWT;
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -14,7 +13,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use NewSolari\Core\Identity\Models\UserSoftBan;
 
-class IdentityUser extends BaseEntity implements Authenticatable, AuthenticatedUserInterface
+class IdentityUser extends BaseEntity implements Authenticatable
 {
     use AuthenticatableTrait;
     use HasFactory;
@@ -186,77 +185,6 @@ class IdentityUser extends BaseEntity implements Authenticatable, AuthenticatedU
     {
         $this->forceFill(['is_system_user' => $value])->save();
     }
-
-    // ──────────────────────────────────────────────────
-    // AuthenticatedUserInterface implementation
-    // ──────────────────────────────────────────────────
-
-    public function getRecordId(): string
-    {
-        return $this->record_id;
-    }
-
-    public function getPartitionId(): string
-    {
-        return $this->partition_id;
-    }
-
-    public function getUsername(): string
-    {
-        return $this->username;
-    }
-
-    public function getEmail(): ?string
-    {
-        return $this->email;
-    }
-
-    public function getFirstName(): ?string
-    {
-        return $this->first_name;
-    }
-
-    public function getLastName(): ?string
-    {
-        return $this->last_name;
-    }
-
-    public function getDisplayName(): ?string
-    {
-        $parts = array_filter([$this->first_name, $this->last_name]);
-
-        return ! empty($parts) ? implode(' ', $parts) : $this->username;
-    }
-
-    public function isSystemUser(): bool
-    {
-        return (bool) $this->is_system_user;
-    }
-
-    public function isActive(): bool
-    {
-        return (bool) $this->is_active;
-    }
-
-    public function hasGroup(string $group): bool
-    {
-        // Load groups if not already loaded
-        if (! $this->relationLoaded('groups')) {
-            $this->load('groups');
-        }
-
-        foreach ($this->groups as $userGroup) {
-            if ($userGroup->name === $group) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    // ──────────────────────────────────────────────────
-    // Authentication
-    // ──────────────────────────────────────────────────
 
     /**
      * Authenticate the user.

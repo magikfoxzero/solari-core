@@ -2,10 +2,8 @@
 
 namespace NewSolari\Core\Identity\Controllers;
 
-use NewSolari\Core\Identity\IdentityApiClient;
 use NewSolari\Core\Identity\Models\IdentityUser;
 use App\Http\Controllers\Controller;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
@@ -40,11 +38,7 @@ class BroadcastAuthController extends Controller
         if ($wsToken) {
             $tokenData = Cache::get("ws_token:{$wsToken}");
             if ($tokenData) {
-                $user = app(IdentityApiClient::class)->getUser($tokenData['user_id']);
-                // TODO: Remove this Eloquent fallback in Phase 4 when identity tables are dropped from module database
-                if (! $user) {
-                    $user = IdentityUser::where('record_id', $tokenData['user_id'])->first();
-                }
+                $user = IdentityUser::where('record_id', $tokenData['user_id'])->first();
                 $partitionId = $tokenData['partition_id'] ?? null;
             }
         }
@@ -65,24 +59,13 @@ class BroadcastAuthController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        // Set partition_id for channel authorization
-        // UserContext has readonly properties, so store partition_id as a request attribute
-        // Channel auth checks: $user->current_partition_id ?? $user->partition_id ?? request()->attributes->get('partition_id')
+        // Set partition_id on user object for channel authorization
         if ($partitionId) {
-            $request->attributes->set('partition_id', $partitionId);
-            // IdentityUser (Eloquent) supports dynamic properties for backward compatibility
-            if ($user instanceof IdentityUser) {
-                $user->current_partition_id = $partitionId;
-            }
+            $user->current_partition_id = $partitionId;
         }
 
         // Set user in Auth for Broadcast::auth to use
-        // UserContext doesn't implement Authenticatable, so use request resolver as fallback
-        if ($user instanceof Authenticatable) {
-            Auth::setUser($user);
-        } else {
-            $request->setUserResolver(fn () => $user);
-        }
+        Auth::setUser($user);
 
         // Let Laravel handle the channel authorization
         return Broadcast::auth($request);
