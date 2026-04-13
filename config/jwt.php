@@ -155,6 +155,22 @@ return [
     | can include it in request headers.
     |
     */
+    /*
+    |--------------------------------------------------------------------------
+    | OIDC Configuration (Identity Service)
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for validating RS256 OIDC tokens issued by the identity
+    | service. The JWKS URI is used to fetch public keys for signature
+    | verification. The issuer must match the 'iss' claim in the JWT.
+    |
+    */
+    'oidc' => [
+        'issuer' => env('OIDC_ISSUER', 'https://auth.solarinet.org'),
+        'jwks_uri' => env('OIDC_JWKS_URI', env('IDENTITY_SERVICE_URL', 'http://127.0.0.1:8170') . '/.well-known/jwks.json'),
+        'jwks_cache_ttl' => (int) env('OIDC_JWKS_CACHE_TTL', 3600),
+    ],
+
     'csrf_cookie' => [
         'name' => env('JWT_CSRF_COOKIE_NAME', 'XSRF-TOKEN'),
         'path' => '/',

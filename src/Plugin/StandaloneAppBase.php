@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Plugin;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
+use NewSolari\Core\Identity\Contracts\AuthenticatedUserInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -25,12 +25,12 @@ abstract class StandaloneAppBase extends PluginBase
     /**
      * Handle app request
      */
-    abstract public function handleRequest(IdentityUser $user, array $requestData): array;
+    abstract public function handleRequest(AuthenticatedUserInterface $user, array $requestData): array;
 
     /**
      * Get frontend configuration
      */
-    public function getFrontendConfig(IdentityUser $user): array
+    public function getFrontendConfig(AuthenticatedUserInterface $user): array
     {
         $config = $this->getAppConfig();
 
@@ -47,7 +47,7 @@ abstract class StandaloneAppBase extends PluginBase
     /**
      * Get user-specific configuration
      */
-    protected function getUserConfig(IdentityUser $user): array
+    protected function getUserConfig(AuthenticatedUserInterface $user): array
     {
         $cacheKey = 'standalone_app_'.$this->getId().'_user_'.$user->record_id.'_config';
 
@@ -68,7 +68,7 @@ abstract class StandaloneAppBase extends PluginBase
     /**
      * Get default user configuration
      */
-    protected function getDefaultUserConfig(IdentityUser $user): array
+    protected function getDefaultUserConfig(AuthenticatedUserInterface $user): array
     {
         return [
             'user_id' => $user->record_id,
@@ -81,7 +81,7 @@ abstract class StandaloneAppBase extends PluginBase
     /**
      * Apply permission-based configuration
      */
-    protected function applyPermissionConfig(array $config, IdentityUser $user): array
+    protected function applyPermissionConfig(array $config, AuthenticatedUserInterface $user): array
     {
         $permissions = $this->getPermissions();
 
@@ -103,7 +103,7 @@ abstract class StandaloneAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function handleApiRequest(IdentityUser $user, string $action, array $data): array
+    public function handleApiRequest(AuthenticatedUserInterface $user, string $action, array $data): array
     {
         try {
             // Check if action requires specific permission

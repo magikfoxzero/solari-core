@@ -68,6 +68,9 @@ class CoreServiceProvider extends ServiceProvider
         });
 
         // App\Services\* aliases removed — stubs deleted, all code uses NewSolari\Core\Services\* directly
+
+        // Identity API client for service-to-service communication
+        $this->app->singleton(\NewSolari\Core\Identity\IdentityApiClient::class);
     }
 
     public function boot(): void
@@ -87,6 +90,7 @@ class CoreServiceProvider extends ServiceProvider
                 \NewSolari\Core\Module\Console\ModuleClearCacheCommand::class,
                 \NewSolari\Core\Module\Console\ModuleListCommand::class,
                 \NewSolari\Core\Module\Console\SoftBanExpireCommand::class,
+                \NewSolari\Core\Identity\IdentityCacheSubscriber::class,
             ]);
         }
     }

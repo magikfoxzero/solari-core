@@ -3,6 +3,7 @@ namespace NewSolari\Core\Identity\Controllers;
 
 use NewSolari\Core\Http\BaseController;
 use NewSolari\Core\Constants\ApiConstants;
+use NewSolari\Core\Identity\Contracts\AuthenticatedUserInterface;
 use NewSolari\Core\Identity\Models\Group;
 use NewSolari\Core\Identity\Models\IdentityPartition;
 use NewSolari\Core\Identity\Models\IdentityUser;
@@ -556,7 +557,7 @@ class IdentityController extends BaseController
         // Check if user has access to the specified partition
         // System admins can access any partition without explicit assignment
         // Use consistent error message to prevent partition enumeration
-        if (! $user->is_system_user && $user->partition_id !== $validated['partition_id']) {
+        if (! $user->is_system_user && ! $user->partitions()->where('identity_partitions.record_id', $validated['partition_id'])->exists()) {
             return $this->errorResponse('Invalid credentials', 401);
         }
 
@@ -1062,8 +1063,8 @@ class IdentityController extends BaseController
         // Fallback: get user from request attributes (for API key auth or test middleware)
         if (! $userId) {
             $authenticatedUser = $request->attributes->get('authenticated_user');
-            if ($authenticatedUser instanceof IdentityUser) {
-                $userId = $authenticatedUser->record_id;
+            if ($authenticatedUser instanceof AuthenticatedUserInterface) {
+                $userId = $authenticatedUser->getRecordId();
             }
         }
 

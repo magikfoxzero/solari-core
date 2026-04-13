@@ -4,7 +4,8 @@ namespace NewSolari\Core\Identity\Controllers;
 
 use NewSolari\Core\Http\BaseController;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
+use NewSolari\Core\Identity\Contracts\AuthenticatedUserInterface;
+use NewSolari\Core\Identity\IdentityApiClient;
 use NewSolari\Core\Identity\Models\RecordShare;
 use NewSolari\Core\Services\RecordSharingService;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,8 @@ use Illuminate\Validation\ValidationException;
 class RecordSharesController extends BaseController
 {
     protected RecordSharingService $sharingService;
+
+    protected IdentityApiClient $identityClient;
 
     /**
      * Model class map for resolving entity types to model classes.
@@ -68,9 +71,10 @@ class RecordSharesController extends BaseController
         'budgets' => 'budget',
     ];
 
-    public function __construct(RecordSharingService $sharingService)
+    public function __construct(RecordSharingService $sharingService, IdentityApiClient $identityClient)
     {
         $this->sharingService = $sharingService;
+        $this->identityClient = $identityClient;
     }
 
     /**
@@ -201,15 +205,20 @@ class RecordSharesController extends BaseController
 
             $shares = $this->sharingService->getSharesForEntity($entity);
 
+            // Batch-fetch user display data via identity service instead of Eloquent relations
+            $userIds = $shares->pluck('shared_with_user_id')->unique()->filter()->values()->all();
+            $userMap = $this->batchFetchUsers($userIds);
+
             return $this->successResponse([
-                'shares' => $shares->map(function ($share) {
+                'shares' => $shares->map(function ($share) use ($userMap) {
+                    $sharedWithUser = $userMap[$share->shared_with_user_id] ?? null;
                     return [
                         'record_id' => $share->record_id,
-                        'shared_with' => $share->sharedWithUser ? [
-                            'record_id' => $share->sharedWithUser->record_id,
-                            'username' => $share->sharedWithUser->username,
-                            'first_name' => $share->sharedWithUser->first_name,
-                            'last_name' => $share->sharedWithUser->last_name,
+                        'shared_with' => $sharedWithUser ? [
+                            'record_id' => $sharedWithUser->record_id,
+                            'username' => $sharedWithUser->username,
+                            'first_name' => $sharedWithUser->first_name,
+                            'last_name' => $sharedWithUser->last_name,
                         ] : null,
                         'permission' => $share->permission,
                         'message' => $share->share_message,
@@ -449,8 +458,12 @@ class RecordSharesController extends BaseController
                 return true;
             });
 
+            // Batch-fetch shared_by user display data via identity service
+            $sharedByIds = $filteredShares->pluck('shared_by')->unique()->filter()->values()->all();
+            $userMap = $this->batchFetchUsers($sharedByIds);
+
             return $this->successResponse([
-                'shares' => $filteredShares->values()->map(function ($share) {
+                'shares' => $filteredShares->values()->map(function ($share) use ($userMap) {
                     // Return minimal entity data to prevent information disclosure
                     // Only include record_id and identifying fields (name/title/subject)
                     $entity = $share->shareable;
@@ -469,6 +482,8 @@ class RecordSharesController extends BaseController
                         $entitySummary['subject'] = $entity->subject;
                     }
 
+                    $sharedByUser = $userMap[$share->shared_by] ?? null;
+
                     return [
                         'record_id' => $share->record_id,
                         'entity_type' => $share->shareable_type,
@@ -476,9 +491,9 @@ class RecordSharesController extends BaseController
                         'entity' => $entitySummary,
                         'permission' => $share->permission,
                         'message' => $share->share_message,
-                        'shared_by' => $share->sharedByUser ? [
-                            'record_id' => $share->sharedByUser->record_id,
-                            'username' => $share->sharedByUser->username,
+                        'shared_by' => $sharedByUser ? [
+                            'record_id' => $sharedByUser->record_id,
+                            'username' => $sharedByUser->username,
                         ] : null,
                         'expires_at' => $share->expires_at?->toIso8601String(),
                         'created_at' => $share->created_at->toIso8601String(),
@@ -493,10 +508,52 @@ class RecordSharesController extends BaseController
     }
 
     /**
+     * Batch-fetch user display data via IdentityApiClient.
+     *
+     * Falls back to direct Eloquent lookup when the identity service is
+     * unavailable (e.g., monolith mode or test environment). This
+     * transitional fallback will be removed once identity is fully extracted.
+     *
+     * @param  string[]  $userIds
+     * @return array<string, \NewSolari\Core\Identity\UserContext|\NewSolari\Core\Identity\Models\IdentityUser> Keyed by user record_id
+     */
+    protected function batchFetchUsers(array $userIds): array
+    {
+        $userMap = [];
+        $missingIds = [];
+
+        // Try identity service first
+        foreach ($userIds as $userId) {
+            $userContext = $this->identityClient->getUser($userId);
+            if ($userContext) {
+                $userMap[$userId] = $userContext;
+            } else {
+                $missingIds[] = $userId;
+            }
+        }
+
+        // Transitional fallback: direct Eloquent lookup for users not found via API
+        // (covers monolith mode and test environments where identity service is unavailable)
+        if ($missingIds && class_exists(\NewSolari\Core\Identity\Models\IdentityUser::class)) {
+            try {
+                $fallbackUsers = \NewSolari\Core\Identity\Models\IdentityUser::whereIn('record_id', $missingIds)->get();
+                foreach ($fallbackUsers as $fallbackUser) {
+                    $userMap[$fallbackUser->record_id] = $fallbackUser;
+                }
+            } catch (\Exception $e) {
+                // Table may not exist in extracted service — silently skip
+                Log::debug('IdentityUser Eloquent fallback unavailable', ['error' => $e->getMessage()]);
+            }
+        }
+
+        return $userMap;
+    }
+
+    /**
      * Resolve entity from type and ID.
      * For security, filters by user's partition to prevent information leakage.
      */
-    protected function resolveEntity(string $type, string $id, ?IdentityUser $user = null): ?object
+    protected function resolveEntity(string $type, string $id, ?AuthenticatedUserInterface $user = null): ?object
     {
         return $this->resolveEntityWithLock($type, $id, $user, false);
     }
@@ -507,7 +564,7 @@ class RecordSharesController extends BaseController
      *
      * @param bool $useLocking Whether to apply lockForUpdate (should be false for SQLite)
      */
-    protected function resolveEntityWithLock(string $type, string $id, ?IdentityUser $user = null, bool $useLocking = false): ?object
+    protected function resolveEntityWithLock(string $type, string $id, ?AuthenticatedUserInterface $user = null, bool $useLocking = false): ?object
     {
         // First try to find in modelMap directly (plural forms)
         $modelClass = $this->modelMap[$type] ?? null;

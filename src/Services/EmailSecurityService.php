@@ -178,7 +178,10 @@ class EmailSecurityService
     {
         $query = PasswordResetToken::where('email', $email);
         if ($partitionId) {
-            $query->where('partition_id', $partitionId);
+            $query->where(function ($q) use ($partitionId) {
+                $q->where('partition_id', $partitionId)
+                  ->orWhereNull('partition_id');
+            });
         }
         $query->delete();
 

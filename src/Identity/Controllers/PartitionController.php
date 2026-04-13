@@ -470,9 +470,10 @@ class PartitionController extends BaseController
             }
         }
 
-        // Query users directly by partition_id column (full multi-tenant isolation)
-        $users = IdentityUser::withoutGlobalScope('partition')
-            ->where('partition_id', $partition->record_id)
+        // Query users via the pivot table (supports multi-partition membership)
+        // Bypass partition scope since users from other home partitions may be attached
+        $users = $partition->users()
+            ->withoutGlobalScope('partition')
             ->with(['groups', 'permissions'])
             ->get();
 
@@ -514,15 +515,14 @@ class PartitionController extends BaseController
             }
         }
 
-        // Update user's partition_id (full multi-tenant isolation)
+        // Add user to partition via pivot table (supports multi-partition membership)
         try {
             DB::transaction(function () use ($user, $partition) {
-                if ($user->partition_id === $partition->record_id) {
+                if ($partition->users()->where('identity_users.record_id', $user->record_id)->exists()) {
                     throw new \RuntimeException('User already in partition');
                 }
 
-                $user->partition_id = $partition->record_id;
-                $user->save();
+                $partition->users()->attach($user->record_id);
             });
         } catch (\RuntimeException $e) {
             // Domain-specific error - safe to return specific message
@@ -574,16 +574,20 @@ class PartitionController extends BaseController
             return $this->errorResponse('Cannot remove yourself from partition', 400);
         }
 
-        // Verify user belongs to this partition
-        if ($user->partition_id !== $partition->record_id) {
+        // Verify user belongs to this partition via pivot table
+        if (! $partition->users()->where('identity_users.record_id', $user->record_id)->exists()) {
             return $this->errorResponse('User not in partition', 400);
         }
 
-        // Deactivate user (full multi-tenant isolation — user belongs to exactly one partition)
+        // Prevent removing user's last partition
+        if ($user->partitions()->count() <= 1) {
+            return $this->errorResponse('Cannot remove last partition from user', 400);
+        }
+
+        // Remove user from partition via pivot table
         try {
-            DB::transaction(function () use ($user) {
-                $user->is_active = false;
-                $user->save();
+            DB::transaction(function () use ($user, $partition) {
+                $partition->users()->detach($user->record_id);
             });
         } catch (\RuntimeException $e) {
             // Domain-specific error - safe to return specific message

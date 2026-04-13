@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use NewSolari\Core\Identity\Contracts\AuthenticatedUserInterface;
 use NewSolari\Core\Identity\Models\IdentityUser;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -225,7 +226,7 @@ class BaseController extends Controller
      *
      * @throws HttpException If user is not authenticated or invalid type
      */
-    protected function getAuthenticatedUser(Request $request): IdentityUser
+    protected function getAuthenticatedUser(Request $request): AuthenticatedUserInterface
     {
         // SECURITY: Only read authenticated_user from request attributes (set by middleware)
         // Never use $request->get() which could read from POST body (potential privilege escalation)
@@ -242,7 +243,7 @@ class BaseController extends Controller
         }
 
         // Validate user type
-        if (! $user instanceof IdentityUser) {
+        if (! $user instanceof AuthenticatedUserInterface) {
             throw new HttpException(401, 'Invalid user type');
         }
 
@@ -663,8 +664,13 @@ class BaseController extends Controller
             return true;
         }
 
-        // Regular users must be in the entity's partition
-        return $user->partitions()->where('identity_partitions.record_id', $entity->partition_id)->exists();
+        // If user is an Eloquent model, check partition membership via relationship
+        if ($user instanceof \Illuminate\Database\Eloquent\Model && method_exists($user, 'partitions')) {
+            return $user->partitions()->where('partition_id', $entity->partition_id)->exists();
+        }
+
+        // For UserContext (OIDC token), check partition_id match or system user
+        return $user->getPartitionId() === $entity->partition_id || $user->isSystemUser();
     }
 
     /**
