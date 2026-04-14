@@ -14,6 +14,7 @@ use NewSolari\Core\Rules\ValidUsername;
 use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
+use NewSolari\Core\Services\OidcTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -877,19 +878,7 @@ class IdentityController extends BaseController
                 $currentTime = time();
                 $expiresAt = $currentTime + 600; // 10 minute temporary token
 
-                $payload = [
-                    'iss' => config('jwt.issuer', config('app.url', 'webos')),
-                    'sub' => $user->username,
-                    'user_id' => $user->record_id,
-                    'partition_id' => $partitionId,
-                    'is_system_user' => false,
-                    'iat' => $currentTime,
-                    'exp' => $expiresAt,
-                    'jti' => Str::random(ApiConstants::JWT_JTI_LENGTH),
-                    'purpose' => 'passkey_registration', // Limited purpose token
-                ];
-
-                $response['temporary_token'] = JWT::encode($payload, IdentityUser::getJwtSecret(), config('jwt.algorithm', 'HS256'));
+                $response['temporary_token'] = $this->generateLimitedPurposeToken($user, 'passkey_registration', $expiresAt - $currentTime);
             }
 
             return $this->successResponse($response, 201);
@@ -1034,12 +1023,14 @@ class IdentityController extends BaseController
 
         if ($token) {
             try {
-                // Decode token to get jti claim
-                $decoded = JWT::decode($token, new Key(IdentityUser::getJwtSecret(), config('jwt.algorithm', 'HS256')));
+                // Decode token to get jti claim (RS256 using local public key)
+                $publicKey = file_get_contents(config('jwt.oidc.public_key_path'));
+                $decoded = JWT::decode($token, new Key($publicKey, 'RS256'));
 
                 // Get user ID from token for push cleanup
-                if (isset($decoded->user_id)) {
-                    $userId = $decoded->user_id;
+                // RS256 tokens use 'sub' as user record_id; legacy used 'user_id'
+                $userId = $decoded->sub ?? $decoded->user_id ?? null;
+                if ($userId) {
                 }
 
                 if (isset($decoded->jti)) {
@@ -1139,7 +1130,8 @@ class IdentityController extends BaseController
 
         // Try to decode the token - it may be expired but still valid for refresh
         try {
-            $decoded = JWT::decode($oldToken, new Key(IdentityUser::getJwtSecret(), config('jwt.algorithm', 'HS256')));
+            $publicKey = file_get_contents(config('jwt.oidc.public_key_path'));
+            $decoded = JWT::decode($oldToken, new Key($publicKey, 'RS256'));
         } catch (ExpiredException $e) {
             // Token is expired but signature was valid - we can still refresh it
             // Extract the payload from the expired token
@@ -1248,20 +1240,22 @@ class IdentityController extends BaseController
             }
         }
 
-        // Look up the user from the token's user_id claim
-        if (! isset($decoded->user_id)) {
-            $errorResponse = $this->errorResponse('Invalid token: missing user_id', 401);
+        // Look up the user from the token's sub claim (record_id)
+        // RS256 tokens use 'sub' as the user identifier; legacy tokens used 'user_id'
+        $userId = $decoded->sub ?? $decoded->user_id ?? null;
+        if (! $userId) {
+            $errorResponse = $this->errorResponse('Invalid token: missing user identifier', 401);
 
             return $this->clearAuthCookies($errorResponse);
         }
 
-        // Look up user by user_id (not username — username is partition-scoped, not globally unique)
+        // Look up user by record_id (not username — username is partition-scoped, not globally unique)
         $user = IdentityUser::withoutGlobalScope('partition')
-            ->where('record_id', $decoded->user_id ?? '')
+            ->where('record_id', $userId)
             ->first();
 
         if (! $user) {
-            Log::warning('Token refresh failed: user not found', ['user_id' => $decoded->user_id ?? 'missing']);
+            Log::warning('Token refresh failed: user not found', ['user_id' => $decoded->sub ?? $decoded->user_id ?? 'missing']);
             $errorResponse = $this->errorResponse('User not found', 401);
 
             return $this->clearAuthCookies($errorResponse);
@@ -1323,50 +1317,19 @@ class IdentityController extends BaseController
     private function decodeExpiredToken(string $token): ?object
     {
         try {
-            $parts = explode('.', $token);
-            if (count($parts) !== 3) {
-                return null;
-            }
+            // Use firebase/php-jwt with a large leeway to accept expired tokens
+            // while still verifying the RS256 signature
+            $previousLeeway = JWT::$leeway;
+            JWT::$leeway = 31536000; // 1 year leeway for expired token refresh
 
-            [$header64, $payload64, $signature64] = $parts;
+            $publicKey = file_get_contents(config('jwt.oidc.public_key_path'));
+            $decoded = JWT::decode($token, new Key($publicKey, 'RS256'));
 
-            // Verify the signature manually
-            $secret = IdentityUser::getJwtSecret();
-            $algorithm = config('jwt.algorithm', 'HS256');
+            JWT::$leeway = $previousLeeway;
 
-            // Map algorithm to hash function
-            $hashAlgorithm = match ($algorithm) {
-                'HS256' => 'sha256',
-                'HS384' => 'sha384',
-                'HS512' => 'sha512',
-                default => 'sha256',
-            };
-
-            $expectedSignature = hash_hmac(
-                $hashAlgorithm,
-                $header64.'.'.$payload64,
-                $secret,
-                true
-            );
-
-            $actualSignature = JWT::urlsafeB64Decode($signature64);
-
-            // Constant-time comparison to prevent timing attacks
-            if (! hash_equals($expectedSignature, $actualSignature)) {
-                Log::warning('Expired token signature verification failed');
-
-                return null;
-            }
-
-            // Decode the payload
-            $payload = json_decode(JWT::urlsafeB64Decode($payload64));
-
-            if (! $payload || ! is_object($payload)) {
-                return null;
-            }
-
-            return $payload;
+            return $decoded;
         } catch (\Exception $e) {
+            JWT::$leeway = $previousLeeway ?? 0;
             Log::error('Failed to decode expired token', ['error' => $e->getMessage()]);
 
             return null;
@@ -1739,21 +1702,23 @@ class IdentityController extends BaseController
      */
     private function generateLimitedPurposeToken(IdentityUser $user, string $purpose, int $ttl = 600): string
     {
+        $privateKey = file_get_contents(config('jwt.oidc.private_key_path'));
         $currentTime = time();
-        $expiresAt = $currentTime + $ttl;
 
         $payload = [
-            'iss' => config('jwt.issuer', config('app.url', 'webos')),
-            'sub' => $user->username,
-            'user_id' => $user->record_id,
+            'iss' => config('jwt.oidc.issuer'),
+            'aud' => 'solari',
+            'sub' => $user->record_id,
             'partition_id' => $user->partition_id,
+            'username' => $user->username,
             'is_system_user' => $user->is_system_user,
             'iat' => $currentTime,
-            'exp' => $expiresAt,
-            'jti' => Str::random(ApiConstants::JWT_JTI_LENGTH),
+            'nbf' => $currentTime,
+            'exp' => $currentTime + $ttl,
+            'jti' => Str::uuid()->toString(),
             'purpose' => $purpose, // LIMITED PURPOSE - this token cannot be used for general API access
         ];
 
-        return JWT::encode($payload, IdentityUser::getJwtSecret(), config('jwt.algorithm', 'HS256'));
+        return JWT::encode($payload, $privateKey, 'RS256', config('jwt.oidc.key_id', 'solari-rs256-2026-04'));
     }
 }

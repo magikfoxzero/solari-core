@@ -6,8 +6,7 @@ use NewSolari\Core\Constants\ApiConstants;
 use App\Http\Controllers\Controller;
 use NewSolari\Core\Identity\Models\RegistrySetting;
 use NewSolari\Core\Services\AuthorizationService;
-use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
+use NewSolari\Core\Services\OidcTokenService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -675,43 +674,36 @@ class BaseController extends Controller
      */
     protected function generateJwtToken(IdentityUser $user, ?object $previousTokenData = null): string
     {
-        $currentTime = time();
-        $expiresAt = $currentTime + (int) config('jwt.expiration', ApiConstants::JWT_EXPIRATION_SECONDS);
+        $tokenService = app(OidcTokenService::class);
         $slidingRefresh = (bool) config('jwt.sliding_refresh', false);
+        $currentTime = time();
 
-        $issuedAt = $currentTime;
-        $originalIat = null;
+        $claims = [
+            'sub' => $user->record_id,
+            'partition_id' => $user->partition_id,
+            'username' => $user->username,
+            'email' => $user->email,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'display_name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->username,
+            'is_system_user' => $user->is_system_user,
+            'is_active' => $user->is_active,
+            'is_partition_admin' => $user->isPartitionAdmin($user->partition_id),
+        ];
 
+        // Preserve iat/original_iat from previous token for max refresh age enforcement
         if ($previousTokenData) {
             if ($slidingRefresh) {
-                // Sliding mode: iat = current time (slides forward on each refresh)
-                // Preserve original_iat for absolute cap enforcement
-                $originalIat = $previousTokenData->original_iat ?? $previousTokenData->iat ?? $currentTime;
+                $claims['iat'] = $currentTime;
+                $claims['original_iat'] = $previousTokenData->original_iat ?? $previousTokenData->iat ?? $currentTime;
             } else {
-                // Fixed mode: preserve original iat from the token chain
                 if (isset($previousTokenData->iat)) {
-                    $issuedAt = $previousTokenData->iat;
+                    $claims['iat'] = $previousTokenData->iat;
                 }
             }
         }
 
-        $payload = [
-            'iss' => config('jwt.issuer', config('app.url', 'webos')),
-            'sub' => $user->username,
-            'user_id' => $user->record_id,
-            'partition_id' => $user->partition_id,
-            'is_system_user' => $user->is_system_user,
-            'iat' => $issuedAt,
-            'exp' => $expiresAt,
-            'jti' => Str::random(ApiConstants::JWT_JTI_LENGTH),
-        ];
-
-        // Include original_iat only in sliding mode for absolute cap enforcement
-        if ($slidingRefresh && $originalIat !== null) {
-            $payload['original_iat'] = $originalIat;
-        }
-
-        return JWT::encode($payload, IdentityUser::getJwtSecret(), config('jwt.algorithm', 'HS256'));
+        return $tokenService->issueAccessToken($claims);
     }
 
     /**

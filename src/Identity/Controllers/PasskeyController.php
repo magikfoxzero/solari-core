@@ -469,8 +469,9 @@ class PasskeyController extends BaseController
         }
 
         try {
-            // Decode the JWT
-            $decoded = JWT::decode($token, new Key(IdentityUser::getJwtSecret(), config('jwt.algorithm', 'HS256')));
+            // Decode the JWT (RS256 using local public key)
+            $publicKey = file_get_contents(config('jwt.oidc.public_key_path'));
+            $decoded = JWT::decode($token, new Key($publicKey, 'RS256'));
             $payload = (array) $decoded;
 
             // If token has no purpose claim, it's a regular auth token - fall back to regular auth

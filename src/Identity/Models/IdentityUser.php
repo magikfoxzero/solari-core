@@ -531,38 +531,27 @@ class IdentityUser extends BaseEntity implements Authenticatable
      */
     public function createToken($name = 'test-token', $abilities = ['*'])
     {
-        $issuedAt = time();
-        $expiresAt = $issuedAt + (int) config('jwt.expiration', ApiConstants::JWT_EXPIRATION_SECONDS);
+        $tokenService = app(\NewSolari\Core\Services\OidcTokenService::class);
 
-        $payload = [
-            'iss' => config('jwt.issuer', config('app.url', 'webos')),
-            'sub' => $this->username,
-            'user_id' => $this->record_id,
+        $claims = [
+            'sub' => $this->record_id,
             'partition_id' => $this->partition_id,
+            'username' => $this->username,
+            'email' => $this->email,
+            'first_name' => $this->first_name,
+            'last_name' => $this->last_name,
+            'display_name' => trim(($this->first_name ?? '') . ' ' . ($this->last_name ?? '')) ?: $this->username,
             'is_system_user' => $this->is_system_user,
-            'iat' => $issuedAt,
-            'exp' => $expiresAt,
-            'jti' => Str::random(ApiConstants::JWT_JTI_LENGTH),
+            'is_active' => $this->is_active ?? true,
+            'is_partition_admin' => $this->isPartitionAdmin($this->partition_id),
         ];
 
-        // Generate JWT using firebase/php-jwt with dedicated JWT secret
-        $token = JWT::encode($payload, self::getJwtSecret(), config('jwt.algorithm', 'HS256'));
+        $token = $tokenService->issueAccessToken($claims);
 
-        // Create a token object that mimics Laravel Sanctum's PersonalAccessToken
         $tokenObject = new \stdClass;
         $tokenObject->plainTextToken = $token;
         $tokenObject->token = $token;
         $tokenObject->accessToken = $token;
-
-        // Add a method to get the plain text token
-        $tokenObject->toPlainTextToken = function () use ($token) {
-            return $token;
-        };
-
-        // Add a method to get the token value (for Sanctum compatibility)
-        $tokenObject->tokenValue = function () use ($token) {
-            return $token;
-        };
 
         return $tokenObject;
     }

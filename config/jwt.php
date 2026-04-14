@@ -6,9 +6,9 @@ return [
     | JWT Secret Key
     |--------------------------------------------------------------------------
     |
-    | This key is used to sign JWT tokens. It should be a separate key from
-    | your application key for security purposes. If not set, the application
-    | will throw an error in production to prevent using the insecure default.
+    | DEPRECATED for token signing — RS256 key pairs are now used instead.
+    | This key may still be used by VerifyServiceToken middleware.
+    | If not set, service-to-service token validation will fall back to APP_KEY.
     |
     | Generate a new key with: php -r "echo base64_encode(random_bytes(32));"
     |
@@ -20,8 +20,8 @@ return [
     | JWT Algorithm
     |--------------------------------------------------------------------------
     |
-    | The algorithm used to sign JWT tokens. HS256 is the default and
-    | recommended for symmetric key signing.
+    | DEPRECATED — RS256 is now used exclusively for token signing.
+    | This setting is retained for backward compatibility with VerifyServiceToken.
     |
     */
     'algorithm' => env('JWT_ALGORITHM', 'HS256'),
@@ -178,5 +178,9 @@ return [
         'issuer' => env('OIDC_ISSUER', 'https://auth.solarinet.org'),
         'jwks_uri' => env('OIDC_JWKS_URI', 'http://127.0.0.1:8170/.well-known/jwks.json'),
         'jwks_cache_ttl' => (int) env('OIDC_JWKS_CACHE_TTL', 3600),
+        'private_key_path' => env('OIDC_PRIVATE_KEY_PATH', storage_path('keys/oidc-private.pem')),
+        'public_key_path' => env('OIDC_PUBLIC_KEY_PATH', storage_path('keys/oidc-public.pem')),
+        'key_id' => env('OIDC_KEY_ID', 'solari-rs256-2026-04'),
+        'token_lifetime' => (int) env('OIDC_TOKEN_LIFETIME', 14400),
     ],
 ];

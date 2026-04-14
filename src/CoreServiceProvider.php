@@ -68,6 +68,15 @@ class CoreServiceProvider extends ServiceProvider
         });
 
         // App\Services\* aliases removed — stubs deleted, all code uses NewSolari\Core\Services\* directly
+
+        // Identity service resolution: remote (HTTP) or local (in-process)
+        // In microservice mode (IDENTITY_SERVICE_URL set), tokens are issued by the remote identity
+        // service and validated via JWKS — OidcTokenService is not needed in the core.
+        // In monorepo mode, resolve OidcTokenService locally for RS256 token signing.
+        $identityEndpoint = config('services.identity.endpoint');
+        if (!$identityEndpoint) {
+            $this->app->singleton(\NewSolari\Core\Services\OidcTokenService::class);
+        }
     }
 
     public function boot(): void

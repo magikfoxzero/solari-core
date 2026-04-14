@@ -537,11 +537,7 @@ class AuthenticationMiddleware
 
     /**
      * Validate Bearer token (JWT) and return the authenticated user.
-     * Supports both HS256/HS512 (legacy symmetric) and RS256 (OIDC asymmetric) tokens.
-     *
-     * Algorithm confusion protection: the JWT header's `alg` and `kid` fields determine
-     * which validation path is used. RS256 requires a `kid` claim; HMAC tokens must NOT
-     * have one. Any other algorithm is rejected outright.
+     * RS256-only — all tokens must be RS256 with a kid claim.
      *
      * @param  string  $token  The JWT token to validate
      * @param  bool  $allowPurposeTokens  Whether to allow tokens with a 'purpose' claim
@@ -554,7 +550,7 @@ class AuthenticationMiddleware
                 return null;
             }
 
-            // Step 1: Decode the JWT header to determine algorithm before validation
+            // Decode the JWT header to verify RS256 + kid
             $header = $this->decodeJwtHeader($token);
             if (! $header) {
                 Log::warning('JWT header could not be decoded');
@@ -565,22 +561,16 @@ class AuthenticationMiddleware
             $alg = $header['alg'] ?? null;
             $kid = $header['kid'] ?? null;
 
-            // Step 2: Route to the correct validation path based on algorithm + kid
-            if ($alg === 'RS256' && $kid !== null) {
-                // OIDC path: RS256 with kid → validate with JWKS public key
-                return $this->validateOidcToken($token, $allowPurposeTokens);
-            } elseif (in_array($alg, ['HS512', 'HS256'], true) && $kid === null) {
-                // Legacy path: HMAC without kid → validate with shared secret
-                return $this->validateHmacToken($token, $allowPurposeTokens);
-            } else {
-                // Reject: unsupported algorithm or algorithm/kid mismatch
-                Log::warning('JWT algorithm confusion rejected', [
+            if ($alg !== 'RS256' || $kid === null) {
+                Log::warning('JWT rejected: RS256 with kid required', [
                     'alg' => $alg,
                     'has_kid' => $kid !== null,
                 ]);
 
                 return null;
             }
+
+            return $this->validateOidcToken($token, $allowPurposeTokens);
 
         } catch (ExpiredException $e) {
             Log::info('JWT token expired');
@@ -631,28 +621,34 @@ class AuthenticationMiddleware
     }
 
     /**
-     * Validate an HMAC-signed JWT (HS256/HS512) — the legacy symmetric path.
-     */
-    private function validateHmacToken(string $token, bool $allowPurposeTokens): ?IdentityUser
-    {
-        // Decode and validate JWT using firebase/php-jwt
-        // This automatically validates signature, expiration (exp), and not-before (nbf) claims
-        $decoded = JWT::decode($token, new Key(IdentityUser::getJwtSecret(), config('jwt.algorithm', 'HS256')));
-
-        return $this->processValidatedPayload((array) $decoded, $allowPurposeTokens);
-    }
-
-    /**
-     * Validate an RS256 OIDC token using JWKS public keys from the identity service.
+     * Validate an RS256 token.
+     * In microservice mode (identity endpoint configured): validate via JWKS.
+     * In monorepo mode: validate via local public key file.
      */
     private function validateOidcToken(string $token, bool $allowPurposeTokens): ?IdentityUser
     {
-        // Fetch JWKS keys (three-tier cache: Redis → disk → HTTP)
-        $keys = $this->getJwksKeys();
-        if (empty($keys)) {
-            Log::error('OIDC: Failed to obtain JWKS keys');
+        $endpoint = config('services.identity.endpoint');
 
-            return null;
+        if ($endpoint) {
+            // Microservice mode — validate via JWKS (three-tier cache: Redis → disk → HTTP)
+            $keys = $this->getJwksKeys();
+            if (empty($keys)) {
+                Log::error('OIDC: Failed to obtain JWKS keys');
+
+                return null;
+            }
+        } else {
+            // Monorepo mode — validate via local public key
+            $publicKeyPath = config('jwt.oidc.public_key_path');
+            if (!$publicKeyPath || !file_exists($publicKeyPath)) {
+                Log::error('OIDC public key not found. Generate with: openssl genpkey -algorithm RSA ...', [
+                    'path' => $publicKeyPath,
+                ]);
+
+                return null;
+            }
+            $publicKey = file_get_contents($publicKeyPath);
+            $keys = new Key($publicKey, 'RS256');
         }
 
         // Decode and validate the token using the JWKS key set
