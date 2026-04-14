@@ -7,12 +7,13 @@ namespace NewSolari\Core\Contracts;
  *
  * Used by CheckPartitionAppEnabled middleware, BaseController, and MiniAppBase.
  * The identity package provides the concrete implementation.
+ *
+ * Only includes methods that core actually calls. The full service has
+ * additional methods (enable, disable, bulkUpdate) used by identity controllers.
  */
 interface PartitionAppServiceContract
 {
-    public function enable(string $partitionId, string $pluginSlug, IdentityUserContract $user): array;
+    public function isEnabled(string $partitionId, string $pluginSlug): bool;
 
-    public function disable(string $partitionId, string $pluginSlug, IdentityUserContract $user): array;
-
-    public function bulkUpdate(string $partitionId, array $updates, IdentityUserContract $user): array;
+    public function isAdminOnly(string $partitionId, string $pluginSlug): bool;
 }
