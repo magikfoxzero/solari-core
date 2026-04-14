@@ -7,7 +7,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use NewSolari\Core\Identity\Models\IdentityUser;
+use NewSolari\Core\Contracts\IdentityUserContract;
 
 /**
  * Trait MiniAppControllerTrait
@@ -24,7 +24,7 @@ trait MiniAppControllerTrait
      * Get the authenticated user from the request.
      * This method must be implemented by the class using this trait.
      */
-    abstract protected function getAuthenticatedUser(Request $request): ?IdentityUser;
+    abstract protected function getAuthenticatedUser(Request $request): ?IdentityUserContract;
 
     /**
      * Get relations to be loaded (override in controller if needed)
@@ -150,7 +150,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUser) {
+            if (! $user || ! $user instanceof IdentityUserContract) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -206,7 +206,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUser) {
+            if (! $user || ! $user instanceof IdentityUserContract) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -260,7 +260,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUser) {
+            if (! $user || ! $user instanceof IdentityUserContract) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -294,7 +294,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUser) {
+            if (! $user || ! $user instanceof IdentityUserContract) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -343,7 +343,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUser) {
+            if (! $user || ! $user instanceof IdentityUserContract) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -393,7 +393,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUser) {
+            if (! $user || ! $user instanceof IdentityUserContract) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -459,7 +459,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUser) {
+            if (! $user || ! $user instanceof IdentityUserContract) {
                 return $this->errorResponse('Authentication required', 401);
             }
 
@@ -524,7 +524,7 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUser) {
+            if (! $user || ! $user instanceof IdentityUserContract) {
                 return $this->errorResponse('Authentication required', 401);
             }
 

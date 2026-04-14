@@ -2,7 +2,6 @@
 
 namespace NewSolari\Core\Module\Console;
 
-use NewSolari\Core\Identity\Models\UserSoftBan;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -13,7 +12,15 @@ class SoftBanExpireCommand extends Command
 
     public function handle(): int
     {
-        $expired = UserSoftBan::where('deleted', false)
+        // UserSoftBan model is provided by the identity package
+        // This command is deprecated in core — it should be registered by the identity service
+        if (!app()->bound('identity.soft_ban_model')) {
+            $this->warn('Identity soft ban model not registered. Skipping.');
+            return 0;
+        }
+
+        $softBanModel = app('identity.soft_ban_model');
+        $expired = $softBanModel::where('deleted', false)
             ->whereNotNull('banned_until')
             ->where('banned_until', '<', now())
             ->get();
@@ -25,7 +32,7 @@ class SoftBanExpireCommand extends Command
                 'deleted_by' => 'system-auto-expire',
                 'deleted_at' => now(),
             ]);
-            UserSoftBan::clearBanCache($ban->user_id);
+            $softBanModel::clearBanCache($ban->user_id);
             $count++;
         }
 

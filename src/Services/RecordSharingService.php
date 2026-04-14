@@ -2,8 +2,8 @@
 
 namespace NewSolari\Core\Services;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
-use NewSolari\Core\Identity\Models\RecordShare;
+use NewSolari\Core\Contracts\IdentityUserContract;
+use NewSolari\Core\Entity\Models\RecordShare;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -53,8 +53,8 @@ class RecordSharingService
      */
     public function share(
         Model $entity,
-        IdentityUser $recipient,
-        IdentityUser $sharer,
+        IdentityUserContract $recipient,
+        IdentityUserContract $sharer,
         string $permission = 'read',
         ?string $message = null,
         ?\DateTimeInterface $expiresAt = null
@@ -81,7 +81,7 @@ class RecordSharingService
     /**
      * Revoke a share.
      */
-    public function unshare(Model $entity, IdentityUser $recipient, IdentityUser $revoker): bool
+    public function unshare(Model $entity, IdentityUserContract $recipient, IdentityUserContract $revoker): bool
     {
         $result = $entity->unshareWith($recipient, $revoker);
 
@@ -101,7 +101,7 @@ class RecordSharingService
      * Get all records shared with a user.
      */
     public function getSharedWithUser(
-        IdentityUser $user,
+        IdentityUserContract $user,
         ?string $entityType = null,
         ?string $partitionId = null
     ): Collection {
@@ -136,7 +136,7 @@ class RecordSharingService
     public function updatePermission(
         RecordShare $share,
         string $newPermission,
-        IdentityUser $updater
+        IdentityUserContract $updater
     ): RecordShare {
         $share->update([
             'permission' => $newPermission,
@@ -160,7 +160,7 @@ class RecordSharingService
     public function shareWithMultiple(
         Model $entity,
         array $recipientIds,
-        IdentityUser $sharer,
+        IdentityUserContract $sharer,
         string $permission = 'read',
         ?string $message = null,
         ?\DateTimeInterface $expiresAt = null
@@ -175,7 +175,8 @@ class RecordSharingService
         return DB::transaction(function () use ($entity, $recipientIds, $sharer, $permission, $message, $expiresAt, &$results) {
             foreach ($recipientIds as $recipientId) {
                 try {
-                    $recipient = IdentityUser::find($recipientId);
+                    $userModel = app('identity.user_model');
+                    $recipient = $userModel::find($recipientId);
                     if (!$recipient) {
                         $results['failed'][] = [
                             'user_id' => $recipientId,
@@ -238,7 +239,7 @@ class RecordSharingService
     /**
      * Check if a user has share-based access to an entity for a given action.
      */
-    public function userHasShareAccess(Model $entity, IdentityUser $user, string $action): bool
+    public function userHasShareAccess(Model $entity, IdentityUserContract $user, string $action): bool
     {
         // Check if entity uses Shareable trait
         if (!method_exists($entity, 'userHasShareAccess')) {
@@ -253,7 +254,7 @@ class RecordSharingService
      *
      * @throws \InvalidArgumentException
      */
-    protected function validateShareRequest(Model $entity, IdentityUser $recipient, IdentityUser $sharer): void
+    protected function validateShareRequest(Model $entity, IdentityUserContract $recipient, IdentityUserContract $sharer): void
     {
         // Entity must use Shareable trait
         if (!method_exists($entity, 'shareWith')) {

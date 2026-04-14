@@ -3,7 +3,7 @@
 namespace NewSolari\Core\Services;
 
 use NewSolari\Core\Constants\ApiConstants;
-use NewSolari\Core\Identity\Models\EntityRelationship;
+use NewSolari\Core\Entity\Models\EntityRelationship;
 // EntityRelationshipHistory removed — feature not implemented
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;

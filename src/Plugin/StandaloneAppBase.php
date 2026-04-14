@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Plugin;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
+use NewSolari\Core\Contracts\IdentityUserContract;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -25,12 +25,12 @@ abstract class StandaloneAppBase extends PluginBase
     /**
      * Handle app request
      */
-    abstract public function handleRequest(IdentityUser $user, array $requestData): array;
+    abstract public function handleRequest(IdentityUserContract $user, array $requestData): array;
 
     /**
      * Get frontend configuration
      */
-    public function getFrontendConfig(IdentityUser $user): array
+    public function getFrontendConfig(IdentityUserContract $user): array
     {
         $config = $this->getAppConfig();
 
@@ -47,7 +47,7 @@ abstract class StandaloneAppBase extends PluginBase
     /**
      * Get user-specific configuration
      */
-    protected function getUserConfig(IdentityUser $user): array
+    protected function getUserConfig(IdentityUserContract $user): array
     {
         $cacheKey = 'standalone_app_'.$this->getId().'_user_'.$user->record_id.'_config';
 
@@ -68,7 +68,7 @@ abstract class StandaloneAppBase extends PluginBase
     /**
      * Get default user configuration
      */
-    protected function getDefaultUserConfig(IdentityUser $user): array
+    protected function getDefaultUserConfig(IdentityUserContract $user): array
     {
         return [
             'user_id' => $user->record_id,
@@ -81,7 +81,7 @@ abstract class StandaloneAppBase extends PluginBase
     /**
      * Apply permission-based configuration
      */
-    protected function applyPermissionConfig(array $config, IdentityUser $user): array
+    protected function applyPermissionConfig(array $config, IdentityUserContract $user): array
     {
         $permissions = $this->getPermissions();
 
@@ -103,7 +103,7 @@ abstract class StandaloneAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function handleApiRequest(IdentityUser $user, string $action, array $data): array
+    public function handleApiRequest(IdentityUserContract $user, string $action, array $data): array
     {
         try {
             // Check if action requires specific permission

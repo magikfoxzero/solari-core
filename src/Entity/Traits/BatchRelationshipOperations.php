@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Entity\Traits;
 
-use NewSolari\Core\Identity\Models\EntityRelationship;
+use NewSolari\Core\Entity\Models\EntityRelationship;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;

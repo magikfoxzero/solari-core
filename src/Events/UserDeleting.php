@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Events;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
+use NewSolari\Core\Contracts\IdentityUserContract;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
@@ -16,12 +16,12 @@ class UserDeleting
 {
     use Dispatchable, SerializesModels;
 
-    public IdentityUser $user;
+    public IdentityUserContract $user;
 
     /**
      * Create a new event instance.
      */
-    public function __construct(IdentityUser $user)
+    public function __construct(IdentityUserContract $user)
     {
         $this->user = $user;
     }

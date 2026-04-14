@@ -2,7 +2,6 @@
 
 namespace NewSolari\Core\Security;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -36,7 +35,8 @@ class TestAuthenticationMiddleware
             // Look up the user by ID without partition scope
             // This is necessary because the X-Partition-ID header might specify a different
             // partition than the user belongs to (e.g., system user accessing other partitions)
-            $user = IdentityUser::withoutGlobalScope('partition')->find($testUserId);
+            $userModel = app('identity.user_model');
+            $user = $userModel::withoutGlobalScope('partition')->find($testUserId);
 
             if ($user) {
                 // Store the user object directly in the request attributes

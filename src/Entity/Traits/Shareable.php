@@ -3,8 +3,8 @@
 namespace NewSolari\Core\Entity\Traits;
 
 use App\Broadcasting\Events\ChannelAccessRevoked;
-use NewSolari\Core\Identity\Models\IdentityUser;
-use NewSolari\Core\Identity\Models\RecordShare;
+use NewSolari\Core\Contracts\IdentityUserContract;
+use NewSolari\Core\Entity\Models\RecordShare;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -117,8 +117,8 @@ trait Shareable
      * @throws \InvalidArgumentException
      */
     public function shareWith(
-        IdentityUser $recipient,
-        IdentityUser $sharer,
+        IdentityUserContract $recipient,
+        IdentityUserContract $sharer,
         string $permission = 'read',
         ?string $message = null,
         ?\DateTimeInterface $expiresAt = null
@@ -183,7 +183,7 @@ trait Shareable
      *
      * SECURITY: Uses transaction with pessimistic locking to prevent TOCTOU race conditions.
      */
-    public function unshareWith(IdentityUser $recipient, IdentityUser $revoker): bool
+    public function unshareWith(IdentityUserContract $recipient, IdentityUserContract $revoker): bool
     {
         // Validate: Revoker must have permission
         if (!$this->canUserShare($revoker)) {
@@ -253,7 +253,7 @@ trait Shareable
     /**
      * Check if this record is shared with a specific user.
      */
-    public function isSharedWith(IdentityUser $user): bool
+    public function isSharedWith(IdentityUserContract $user): bool
     {
         return $this->activeShares()
             ->where('shared_with_user_id', $user->record_id)
@@ -263,7 +263,7 @@ trait Shareable
     /**
      * Get the share permission for a user.
      */
-    public function getSharePermission(IdentityUser $user): ?string
+    public function getSharePermission(IdentityUserContract $user): ?string
     {
         $share = $this->activeShares()
             ->where('shared_with_user_id', $user->record_id)
@@ -288,7 +288,7 @@ trait Shareable
      * Check if a user can share this record.
      * Allowed: owner, partition admin, system admin
      */
-    public function canUserShare(IdentityUser $user): bool
+    public function canUserShare(IdentityUserContract $user): bool
     {
         // System admin
         if ($user->is_system_user) {

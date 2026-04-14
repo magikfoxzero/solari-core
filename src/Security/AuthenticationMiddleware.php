@@ -2,8 +2,7 @@
 
 namespace NewSolari\Core\Security;
 
-use NewSolari\Core\Identity\Models\IdentityPartition;
-use NewSolari\Core\Identity\Models\IdentityUser;
+use NewSolari\Core\Contracts\IdentityUserContract;
 use Closure;
 use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
@@ -38,7 +37,8 @@ class AuthenticationMiddleware
             $wsToken = $request->header('X-WS-Token');
             $tokenData = Cache::get("ws_token:{$wsToken}");
             if ($tokenData) {
-                $user = IdentityUser::withoutGlobalScope('partition')->where('record_id', $tokenData['user_id'])->first();
+                $userModel = app('identity.user_model');
+                $user = $userModel::withoutGlobalScope('partition')->where('record_id', $tokenData['user_id'])->first();
                 if ($user) {
                     $request->attributes->set('authenticated_user', $user);
                     $request->attributes->set('partition_id', $tokenData['partition_id'] ?? null);
@@ -140,7 +140,8 @@ class AuthenticationMiddleware
 
                 // Validate partition if provided
                 if ($partitionId) {
-                    $partition = IdentityPartition::find($partitionId);
+                    $partitionModel = app('identity.partition_model');
+                    $partition = $partitionModel::find($partitionId);
 
                     if (! $partition) {
                         Log::warning('Authentication attempt with invalid partition', [
@@ -222,7 +223,8 @@ class AuthenticationMiddleware
         // No duplicate check needed here
 
         // Find the user by API key - bypass partition scope since auth happens before partition context
-        $user = IdentityUser::withoutGlobalScope('partition')
+        $userModel = app('identity.user_model');
+        $user = $userModel::withoutGlobalScope('partition')
             ->where('username', $apiKey)
             ->first();
 
@@ -264,7 +266,8 @@ class AuthenticationMiddleware
 
         // Validate partition if provided
         if ($partitionId) {
-            $partition = IdentityPartition::find($partitionId);
+            $partitionModel = app('identity.partition_model');
+            $partition = $partitionModel::find($partitionId);
 
             if (! $partition) {
                 Log::warning('Authentication attempt with invalid partition', [
@@ -542,7 +545,7 @@ class AuthenticationMiddleware
      * @param  string  $token  The JWT token to validate
      * @param  bool  $allowPurposeTokens  Whether to allow tokens with a 'purpose' claim
      */
-    protected function validateBearerToken(string $token, bool $allowPurposeTokens = false): ?IdentityUser
+    protected function validateBearerToken(string $token, bool $allowPurposeTokens = false): ?IdentityUserContract
     {
         try {
             // Check if this is a valid JWT token format (must have at least header.payload.signature)
@@ -625,7 +628,7 @@ class AuthenticationMiddleware
      * In microservice mode (identity endpoint configured): validate via JWKS.
      * In monorepo mode: validate via local public key file.
      */
-    private function validateOidcToken(string $token, bool $allowPurposeTokens): ?IdentityUser
+    private function validateOidcToken(string $token, bool $allowPurposeTokens): ?IdentityUserContract
     {
         $endpoint = config('services.identity.endpoint');
 
@@ -683,7 +686,7 @@ class AuthenticationMiddleware
      *
      * @param  array<string, mixed>  $payload
      */
-    private function processValidatedPayload(array $payload, bool $allowPurposeTokens): ?IdentityUser
+    private function processValidatedPayload(array $payload, bool $allowPurposeTokens): ?IdentityUserContract
     {
         // Verify required claims exist
         if (! isset($payload['sub']) || ! isset($payload['exp'])) {
@@ -744,7 +747,8 @@ class AuthenticationMiddleware
         }
 
         // Bypass partition scope since auth happens before partition context is established
-        $user = IdentityUser::withoutGlobalScope('partition')
+        $userModel = app('identity.user_model');
+        $user = $userModel::withoutGlobalScope('partition')
             ->where('record_id', $userId)
             ->first();
 

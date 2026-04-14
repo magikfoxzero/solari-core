@@ -2,8 +2,7 @@
 
 namespace NewSolari\Core\Services;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
-use NewSolari\Core\Identity\Models\PartitionApp;
+use NewSolari\Core\Contracts\IdentityUserContract;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +27,14 @@ class PartitionAppService
     public function __construct(PluginRegistry $registry)
     {
         $this->registry = $registry;
+    }
+
+    /**
+     * Get the PartitionApp model class via container binding.
+     */
+    protected function partitionAppModel(): string
+    {
+        return get_class(app('identity.partition_app_model'));
     }
 
     /**
@@ -70,7 +77,7 @@ class PartitionAppService
         $cacheKey = "partition_app:{$partitionId}:{$pluginId}";
 
         return Cache::remember($cacheKey, $this->cacheTtl, function () use ($partitionId, $pluginId) {
-            $record = PartitionApp::where('partition_id', $partitionId)
+            $record = $this->partitionAppModel()::where('partition_id', $partitionId)
                 ->where('plugin_id', $pluginId)
                 ->first();
 
@@ -84,7 +91,7 @@ class PartitionAppService
      *
      * @throws \Exception
      */
-    public function enable(string $partitionId, string $pluginId, IdentityUser $user, bool $enableDependencies = true): array
+    public function enable(string $partitionId, string $pluginId, IdentityUserContract $user, bool $enableDependencies = true): array
     {
         DB::beginTransaction();
 
@@ -150,7 +157,7 @@ class PartitionAppService
      *
      * @throws \Exception
      */
-    public function disable(string $partitionId, string $pluginId, IdentityUser $user, bool $force = false): array
+    public function disable(string $partitionId, string $pluginId, IdentityUserContract $user, bool $force = false): array
     {
         DB::beginTransaction();
 
@@ -220,7 +227,7 @@ class PartitionAppService
      *
      * @param  array  $apps  Array of plugin_id => is_enabled
      */
-    public function bulkUpdate(string $partitionId, array $apps, IdentityUser $user): array
+    public function bulkUpdate(string $partitionId, array $apps, IdentityUserContract $user): array
     {
         $enabled = [];
         $disabled = [];
@@ -316,7 +323,7 @@ class PartitionAppService
     /**
      * Enable an app with its dependencies (for use within a transaction).
      */
-    protected function enableWithDependencies(string $partitionId, string $pluginId, IdentityUser $user): void
+    protected function enableWithDependencies(string $partitionId, string $pluginId, IdentityUserContract $user): void
     {
         // Validate plugin exists
         $plugin = $this->resolveManifest($pluginId);
@@ -339,7 +346,7 @@ class PartitionAppService
     /**
      * Disable an app and its dependents (for use within a transaction).
      */
-    protected function disableWithDependents(string $partitionId, string $pluginId, IdentityUser $user): void
+    protected function disableWithDependents(string $partitionId, string $pluginId, IdentityUserContract $user): void
     {
         // Check for dependent apps
         $enabledDependents = $this->getEnabledDependents($partitionId, $pluginId);
@@ -367,7 +374,7 @@ class PartitionAppService
         $cacheKey = "partition_apps:{$partitionId}";
 
         return Cache::remember($cacheKey, $this->cacheTtl, function () use ($partitionId) {
-            return PartitionApp::where('partition_id', $partitionId)
+            return $this->partitionAppModel()::where('partition_id', $partitionId)
                 ->where('is_enabled', true)
                 ->get();
         });
@@ -383,7 +390,7 @@ class PartitionAppService
         $plugins = $this->registry->getAll();
 
         foreach ($plugins as $pluginId => $manifest) {
-            PartitionApp::firstOrCreate(
+            $this->partitionAppModel()::firstOrCreate(
                 [
                     'partition_id' => $partitionId,
                     'plugin_id' => $pluginId,
@@ -406,11 +413,11 @@ class PartitionAppService
     /**
      * Enable a single app without dependency checking.
      */
-    protected function enableSingle(string $partitionId, string $pluginId, IdentityUser $user): void
+    protected function enableSingle(string $partitionId, string $pluginId, IdentityUserContract $user): void
     {
         // Use updateOrCreate for atomic operation - avoids race condition
         // Note: PartitionApp uses HasUuids trait for auto-generated UUIDs
-        PartitionApp::updateOrCreate(
+        $this->partitionAppModel()::updateOrCreate(
             [
                 'partition_id' => $partitionId,
                 'plugin_id' => $pluginId,
@@ -427,11 +434,11 @@ class PartitionAppService
     /**
      * Disable a single app without dependent checking.
      */
-    protected function disableSingle(string $partitionId, string $pluginId, IdentityUser $user): void
+    protected function disableSingle(string $partitionId, string $pluginId, IdentityUserContract $user): void
     {
         // Use updateOrCreate for atomic operation - avoids race condition
         // Note: PartitionApp uses HasUuids trait for auto-generated UUIDs
-        PartitionApp::updateOrCreate(
+        $this->partitionAppModel()::updateOrCreate(
             [
                 'partition_id' => $partitionId,
                 'plugin_id' => $pluginId,
@@ -504,7 +511,7 @@ class PartitionAppService
      */
     public function getAppRecord(string $partitionId, string $pluginId): ?PartitionApp
     {
-        return PartitionApp::where('partition_id', $partitionId)
+        return $this->partitionAppModel()::where('partition_id', $partitionId)
             ->where('plugin_id', $pluginId)
             ->first();
     }
@@ -512,7 +519,7 @@ class PartitionAppService
     /**
      * Set UI visibility for an app.
      */
-    public function setUiVisibility(string $partitionId, string $pluginId, bool $showInUi, IdentityUser $user): array
+    public function setUiVisibility(string $partitionId, string $pluginId, bool $showInUi, IdentityUserContract $user): array
     {
         try {
             // Validate plugin exists
@@ -522,7 +529,7 @@ class PartitionAppService
             }
 
             // Update or create the record
-            PartitionApp::updateOrCreate(
+            $this->partitionAppModel()::updateOrCreate(
                 [
                     'partition_id' => $partitionId,
                     'plugin_id' => $pluginId,
@@ -561,7 +568,7 @@ class PartitionAppService
         $cacheKey = "partition_app_ui:{$partitionId}:{$pluginId}";
 
         return Cache::remember($cacheKey, $this->cacheTtl, function () use ($partitionId, $pluginId) {
-            $record = PartitionApp::where('partition_id', $partitionId)
+            $record = $this->partitionAppModel()::where('partition_id', $partitionId)
                 ->where('plugin_id', $pluginId)
                 ->first();
 
@@ -573,7 +580,7 @@ class PartitionAppService
     /**
      * Set dashboard visibility for an app.
      */
-    public function setDashboardVisibility(string $partitionId, string $pluginId, bool $showInDashboard, IdentityUser $user): array
+    public function setDashboardVisibility(string $partitionId, string $pluginId, bool $showInDashboard, IdentityUserContract $user): array
     {
         try {
             // Validate plugin exists
@@ -583,7 +590,7 @@ class PartitionAppService
             }
 
             // Update or create the record
-            PartitionApp::updateOrCreate(
+            $this->partitionAppModel()::updateOrCreate(
                 [
                     'partition_id' => $partitionId,
                     'plugin_id' => $pluginId,
@@ -622,7 +629,7 @@ class PartitionAppService
         $cacheKey = "partition_app_dashboard:{$partitionId}:{$pluginId}";
 
         return Cache::remember($cacheKey, $this->cacheTtl, function () use ($partitionId, $pluginId) {
-            $record = PartitionApp::where('partition_id', $partitionId)
+            $record = $this->partitionAppModel()::where('partition_id', $partitionId)
                 ->where('plugin_id', $pluginId)
                 ->first();
 
@@ -634,7 +641,7 @@ class PartitionAppService
     /**
      * Set exclude_meta_app setting for an app.
      */
-    public function setExcludeMetaApp(string $partitionId, string $pluginId, bool $excludeMetaApp, IdentityUser $user): array
+    public function setExcludeMetaApp(string $partitionId, string $pluginId, bool $excludeMetaApp, IdentityUserContract $user): array
     {
         try {
             // Validate plugin exists
@@ -644,7 +651,7 @@ class PartitionAppService
             }
 
             // Update or create the record
-            PartitionApp::updateOrCreate(
+            $this->partitionAppModel()::updateOrCreate(
                 [
                     'partition_id' => $partitionId,
                     'plugin_id' => $pluginId,
@@ -683,7 +690,7 @@ class PartitionAppService
         $cacheKey = "partition_app_exclude_meta:{$partitionId}:{$pluginId}";
 
         return Cache::remember($cacheKey, $this->cacheTtl, function () use ($partitionId, $pluginId) {
-            $record = PartitionApp::where('partition_id', $partitionId)
+            $record = $this->partitionAppModel()::where('partition_id', $partitionId)
                 ->where('plugin_id', $pluginId)
                 ->first();
 
@@ -695,7 +702,7 @@ class PartitionAppService
     /**
      * Set admin_only setting for an app.
      */
-    public function setAdminOnly(string $partitionId, string $pluginId, bool $adminOnly, IdentityUser $user): array
+    public function setAdminOnly(string $partitionId, string $pluginId, bool $adminOnly, IdentityUserContract $user): array
     {
         try {
             // Validate plugin exists
@@ -705,7 +712,7 @@ class PartitionAppService
             }
 
             // Update or create the record
-            PartitionApp::updateOrCreate(
+            $this->partitionAppModel()::updateOrCreate(
                 [
                     'partition_id' => $partitionId,
                     'plugin_id' => $pluginId,
@@ -744,7 +751,7 @@ class PartitionAppService
         $cacheKey = "partition_app_admin_only:{$partitionId}:{$pluginId}";
 
         return Cache::remember($cacheKey, $this->cacheTtl, function () use ($partitionId, $pluginId) {
-            $record = PartitionApp::where('partition_id', $partitionId)
+            $record = $this->partitionAppModel()::where('partition_id', $partitionId)
                 ->where('plugin_id', $pluginId)
                 ->first();
 

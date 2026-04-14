@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Security;
 
-use NewSolari\Core\Identity\Models\IdempotencyKey;
+use NewSolari\Core\Entity\Models\IdempotencyKey;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;

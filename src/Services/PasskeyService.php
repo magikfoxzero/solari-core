@@ -2,8 +2,7 @@
 
 namespace NewSolari\Core\Services;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
-use NewSolari\Core\Identity\Models\UserPasskey;
+use NewSolari\Core\Contracts\IdentityUserContract;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -78,7 +77,7 @@ class PasskeyService
     /**
      * Create registration options for a user.
      */
-    public function createRegistrationOptions(IdentityUser $user, ?string $rpId = null): array
+    public function createRegistrationOptions(IdentityUserContract $user, ?string $rpId = null): array
     {
         $rpId = $rpId ?: config('passkeys.rp_id') ?: request()->getHost();
         $rpName = config('passkeys.rp_name', 'Solari');
@@ -128,7 +127,7 @@ class PasskeyService
      * Verify registration response and create passkey.
      */
     public function verifyRegistration(
-        IdentityUser $user,
+        IdentityUserContract $user,
         array $response,
         ?string $deviceName = null,
         ?string $rpId = null
@@ -196,7 +195,7 @@ class PasskeyService
         );
 
         // Store the passkey
-        $passkey = UserPasskey::create([
+        $passkey = app('identity.user_passkey_model')::create([
             'user_id' => $user->record_id,
             'credential_id' => $publicKeyCredentialSource->publicKeyCredentialId,
             'public_key' => $publicKeyCredentialSource->credentialPublicKey,
@@ -230,7 +229,7 @@ class PasskeyService
         $userId = null;
 
         if ($username) {
-            $query = IdentityUser::withoutGlobalScope('partition')
+            $query = app('identity.user_model')::withoutGlobalScope('partition')
                 ->where('username', $username);
             if ($partitionId) {
                 $query->where('partition_id', $partitionId);
@@ -269,7 +268,7 @@ class PasskeyService
     /**
      * Verify authentication response and return user.
      */
-    public function verifyAuthentication(array $response, string $sessionId, ?string $rpId = null): IdentityUser
+    public function verifyAuthentication(array $response, string $sessionId, ?string $rpId = null): IdentityUserContract
     {
         $rpId = $rpId ?: config('passkeys.rp_id') ?: request()->getHost();
 
@@ -301,7 +300,7 @@ class PasskeyService
 
         // Find the passkey by credential ID (uses indexed hash for efficiency)
         $credentialId = $publicKeyCredential->rawId;
-        $passkey = UserPasskey::findByCredentialId($credentialId);
+        $passkey = app('identity.user_passkey_model')::findByCredentialId($credentialId);
 
         if (!$passkey) {
             throw new \RuntimeException('Passkey not found');
@@ -377,7 +376,7 @@ class PasskeyService
     /**
      * Get user's passkeys.
      */
-    public function getUserPasskeys(IdentityUser $user): array
+    public function getUserPasskeys(IdentityUserContract $user): array
     {
         return $user->passkeys()
             ->orderBy('created_at', 'desc')
@@ -389,7 +388,7 @@ class PasskeyService
     /**
      * Delete a passkey.
      */
-    public function deletePasskey(IdentityUser $user, string $passkeyId): bool
+    public function deletePasskey(IdentityUserContract $user, string $passkeyId): bool
     {
         $passkey = $user->passkeys()->where('id', $passkeyId)->first();
 
@@ -424,7 +423,7 @@ class PasskeyService
     /**
      * Rename a passkey.
      */
-    public function renamePasskey(IdentityUser $user, string $passkeyId, string $name): bool
+    public function renamePasskey(IdentityUserContract $user, string $passkeyId, string $name): bool
     {
         $passkey = $user->passkeys()->where('id', $passkeyId)->first();
 
@@ -443,7 +442,7 @@ class PasskeyService
      */
     public function findOneByCredentialId(string $publicKeyCredentialId): ?PublicKeyCredentialSource
     {
-        $passkey = UserPasskey::findByCredentialId($publicKeyCredentialId);
+        $passkey = app('identity.user_passkey_model')::findByCredentialId($publicKeyCredentialId);
 
         if (!$passkey) {
             return null;
@@ -457,7 +456,7 @@ class PasskeyService
      */
     public function findAllForUserEntity(PublicKeyCredentialUserEntity $publicKeyCredentialUserEntity): array
     {
-        $user = IdentityUser::withoutGlobalScope('partition')
+        $user = app('identity.user_model')::withoutGlobalScope('partition')
             ->where('record_id', $publicKeyCredentialUserEntity->id)
             ->first();
 
@@ -476,7 +475,7 @@ class PasskeyService
     public function saveCredentialSource(PublicKeyCredentialSource $publicKeyCredentialSource): void
     {
         // Find existing passkey and update counter
-        $passkey = UserPasskey::findByCredentialId($publicKeyCredentialSource->publicKeyCredentialId);
+        $passkey = app('identity.user_passkey_model')::findByCredentialId($publicKeyCredentialSource->publicKeyCredentialId);
 
         if ($passkey) {
             $passkey->sign_count = $publicKeyCredentialSource->counter;
@@ -506,7 +505,7 @@ class PasskeyService
     /**
      * Get credential descriptors for a user (for excludeCredentials/allowCredentials).
      */
-    private function getCredentialDescriptorsForUser(IdentityUser $user): array
+    private function getCredentialDescriptorsForUser(IdentityUserContract $user): array
     {
         return $user->passkeys
             ->map(fn ($p) => new PublicKeyCredentialDescriptor(

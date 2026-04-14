@@ -2,8 +2,8 @@
 
 namespace NewSolari\Core\Plugin;
 
-use NewSolari\Core\Identity\Models\IdentityPartition;
-use NewSolari\Core\Identity\Models\IdentityUser;
+use NewSolari\Core\Contracts\IdentityPartitionContract;
+use NewSolari\Core\Contracts\IdentityUserContract;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -260,7 +260,7 @@ abstract class PluginBase implements PluginInterface
     /**
      * Check if user has permission for this plugin
      */
-    public function checkUserPermission(IdentityUser $user, string $permission): bool
+    public function checkUserPermission(IdentityUserContract $user, string $permission): bool
     {
         if ($user->is_system_user) {
             return true;
@@ -273,7 +273,7 @@ abstract class PluginBase implements PluginInterface
     /**
      * Check if current partition has access to this plugin
      */
-    public function checkPartitionAccess(IdentityPartition $partition): bool
+    public function checkPartitionAccess(IdentityPartitionContract $partition): bool
     {
         // By default, all partitions have access
         // Can be overridden by specific plugins

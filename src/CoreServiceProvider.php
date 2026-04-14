@@ -6,9 +6,7 @@ use Illuminate\Support\ServiceProvider;
 use NewSolari\Core\Module\Contracts\ServiceBusInterface;
 use NewSolari\Core\Module\ModuleRegistry;
 use NewSolari\Core\Module\ServiceBus\InProcessServiceBus;
-use NewSolari\Core\Services\AuthorizationService;
 use NewSolari\Core\Services\EntityTypeRegistryService;
-use NewSolari\Core\Services\PartitionAppService;
 use NewSolari\Core\Services\PluginRegistry;
 use NewSolari\Core\Services\RelationshipMigrationService;
 use NewSolari\Core\Services\RelationshipService;
@@ -18,7 +16,7 @@ class CoreServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $configs = ['security', 'jwt', 'passkeys', 'modules', 'ratelimits', 'relationships', 'idempotency'];
+        $configs = ['security', 'modules', 'ratelimits', 'relationships', 'idempotency'];
         foreach ($configs as $config) {
             $this->mergeConfigFrom(__DIR__ . '/../config/' . $config . '.php', $config);
         }
@@ -33,16 +31,6 @@ class CoreServiceProvider extends ServiceProvider
 
         // Alias for plugin.manager (used by MetaAppBase)
         $this->app->alias(PluginRegistry::class, 'plugin.manager');
-
-        // Register PartitionAppService as a singleton
-        $this->app->singleton(PartitionAppService::class, function ($app) {
-            return new PartitionAppService(
-                $app->make(PluginRegistry::class)
-            );
-        });
-
-        // Register AuthorizationService as a singleton
-        $this->app->singleton(AuthorizationService::class);
 
         // --- Services moved from RelationshipServiceProvider ---
 
@@ -68,15 +56,6 @@ class CoreServiceProvider extends ServiceProvider
         });
 
         // App\Services\* aliases removed — stubs deleted, all code uses NewSolari\Core\Services\* directly
-
-        // Identity service resolution: remote (HTTP) or local (in-process)
-        // In microservice mode (IDENTITY_SERVICE_URL set), tokens are issued by the remote identity
-        // service and validated via JWKS — OidcTokenService is not needed in the core.
-        // In monorepo mode, resolve OidcTokenService locally for RS256 token signing.
-        $identityEndpoint = config('services.identity.endpoint');
-        if (!$identityEndpoint) {
-            $this->app->singleton(\NewSolari\Core\Services\OidcTokenService::class);
-        }
     }
 
     public function boot(): void
@@ -89,13 +68,11 @@ class CoreServiceProvider extends ServiceProvider
         );
 
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
-        $this->loadRoutesFrom(__DIR__ . '/../routes/api.php');
 
         if ($this->app->runningInConsole()) {
             $this->commands([
                 \NewSolari\Core\Module\Console\ModuleClearCacheCommand::class,
                 \NewSolari\Core\Module\Console\ModuleListCommand::class,
-                \NewSolari\Core\Module\Console\SoftBanExpireCommand::class,
             ]);
         }
     }

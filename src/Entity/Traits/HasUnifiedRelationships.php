@@ -2,9 +2,9 @@
 
 namespace NewSolari\Core\Entity\Traits;
 
-use NewSolari\Core\Identity\Models\EntityRelationship;
-use NewSolari\Core\Identity\Models\EntityTypeRegistry;
-use NewSolari\Core\Identity\Models\RelationshipTypeRegistry;
+use NewSolari\Core\Entity\Models\EntityRelationship;
+use NewSolari\Core\Entity\Models\EntityTypeRegistry;
+use NewSolari\Core\Entity\Models\RelationshipTypeRegistry;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Collection;

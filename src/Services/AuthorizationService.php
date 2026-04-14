@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Services;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
+use NewSolari\Core\Contracts\IdentityUserContract;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +29,7 @@ class AuthorizationService
      * @param  Model|null  $entity  Optional entity for share-based access checks
      */
     public function authorize(
-        IdentityUser $user,
+        IdentityUserContract $user,
         string $action,
         string $entityPartitionId,
         ?string $ownerId = null,
@@ -122,7 +122,7 @@ class AuthorizationService
     /**
      * Check if user has share-based access to an entity.
      */
-    protected function hasShareAccess(Model $entity, IdentityUser $user, string $action): bool
+    protected function hasShareAccess(Model $entity, IdentityUserContract $user, string $action): bool
     {
         // Check if entity uses Shareable trait
         if (!method_exists($entity, 'userHasShareAccess')) {
@@ -137,7 +137,7 @@ class AuthorizationService
      * Automatically extracts partition_id, created_by, and is_public from the model.
      * Also checks share-based access for entities that use the Shareable trait.
      */
-    public function authorizeEntity(IdentityUser $user, string $action, Model $entity): bool
+    public function authorizeEntity(IdentityUserContract $user, string $action, Model $entity): bool
     {
         $partitionId = $entity->partition_id ?? null;
         $ownerId = $entity->created_by ?? null;
@@ -159,7 +159,7 @@ class AuthorizationService
     /**
      * Check if user can access a partition (without specific entity context).
      */
-    public function canAccessPartition(IdentityUser $user, string $partitionId): bool
+    public function canAccessPartition(IdentityUserContract $user, string $partitionId): bool
     {
         // System admins can access any partition
         if ($user->is_system_user) {
@@ -178,7 +178,7 @@ class AuthorizationService
      * @param  bool  $includePublic  Whether to include public records (for view queries)
      * @param  bool  $includeShared  Whether to include shared records (default true)
      */
-    public function scopeAccessible($query, IdentityUser $user, bool $includePublic = true, bool $includeShared = true): Builder
+    public function scopeAccessible($query, IdentityUserContract $user, bool $includePublic = true, bool $includeShared = true): Builder
     {
         // System admins see everything
         if ($user->is_system_user) {
@@ -238,7 +238,7 @@ class AuthorizationService
      * Log authorization decision for audit purposes.
      */
     protected function logDecision(
-        IdentityUser $user,
+        IdentityUserContract $user,
         string $action,
         string $partitionId,
         bool $allowed,

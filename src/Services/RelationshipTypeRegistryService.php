@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Services;
 
-use NewSolari\Core\Identity\Models\RelationshipTypeRegistry;
+use NewSolari\Core\Entity\Models\RelationshipTypeRegistry;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;

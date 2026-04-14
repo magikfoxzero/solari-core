@@ -2,9 +2,9 @@
 
 namespace NewSolari\Core\Plugin;
 
+use NewSolari\Core\Contracts\IdentityUserContract;
 use NewSolari\Core\Entity\BaseEntity;
-use NewSolari\Core\Identity\Models\IdentityUser;
-use NewSolari\Core\Identity\Models\EntityRelationship;
+use NewSolari\Core\Entity\Models\EntityRelationship;
 use NewSolari\Folders\Models\Folder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -54,7 +54,7 @@ abstract class MiniAppBase extends PluginBase
      * Check if user can access data item.
      * Includes share-based access for entities that use the Shareable trait.
      */
-    public function checkDataAccess(BaseEntity $entity, IdentityUser $user, string $action = 'read'): bool
+    public function checkDataAccess(BaseEntity $entity, IdentityUserContract $user, string $action = 'read'): bool
     {
         // System admins can do anything
         if ($user->is_system_user) {
@@ -114,7 +114,7 @@ abstract class MiniAppBase extends PluginBase
      * Check if user can change privacy settings for an entity.
      * Only owner, partition admin, or system admin can make records public/private.
      */
-    public function canUserChangePrivacy(BaseEntity $entity, IdentityUser $user): bool
+    public function canUserChangePrivacy(BaseEntity $entity, IdentityUserContract $user): bool
     {
         // System admins can do anything
         if ($user->is_system_user) {
@@ -140,7 +140,7 @@ abstract class MiniAppBase extends PluginBase
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function validateData(array $data, string $operation, IdentityUser $user, ?BaseEntity $existingEntity = null): array
+    public function validateData(array $data, string $operation, IdentityUserContract $user, ?BaseEntity $existingEntity = null): array
     {
         $rules = $this->getValidationRules();
 
@@ -321,7 +321,7 @@ abstract class MiniAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function createDataItem(array $data, IdentityUser $user): BaseEntity
+    public function createDataItem(array $data, IdentityUserContract $user): BaseEntity
     {
         try {
             // Validate data
@@ -360,7 +360,7 @@ abstract class MiniAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function updateDataItem(BaseEntity $entity, array $data, IdentityUser $user): bool
+    public function updateDataItem(BaseEntity $entity, array $data, IdentityUserContract $user): bool
     {
         try {
             // Check if user can access this entity
@@ -397,7 +397,7 @@ abstract class MiniAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function deleteDataItem(BaseEntity $entity, IdentityUser $user): bool
+    public function deleteDataItem(BaseEntity $entity, IdentityUserContract $user): bool
     {
         try {
             // Check if user can access this entity
@@ -432,7 +432,7 @@ abstract class MiniAppBase extends PluginBase
      * @param  string|null  $partitionId  Override partition context (from X-Partition-ID header)
      * @return \Illuminate\Database\Eloquent\Builder
      */
-    public function getDataQuery(IdentityUser $user, array $filters = [], ?string $partitionId = null)
+    public function getDataQuery(IdentityUserContract $user, array $filters = [], ?string $partitionId = null)
     {
         $modelClass = $this->getDataModel();
         $query = $modelClass::query();
@@ -533,7 +533,7 @@ abstract class MiniAppBase extends PluginBase
             $modelClass = $this->getDataModel();
             $entityTypeSingular = null;
             if ($modelClass && class_exists($modelClass)) {
-                $registry = \NewSolari\Core\Identity\Models\EntityTypeRegistry::findByModelClass($modelClass);
+                $registry = \NewSolari\Core\Entity\Models\EntityTypeRegistry::findByModelClass($modelClass);
                 if ($registry) {
                     $entityTypeSingular = $registry->type_key;
                 }
@@ -658,7 +658,7 @@ abstract class MiniAppBase extends PluginBase
     /**
      * Get count of data items accessible to user
      */
-    public function getDataCount(IdentityUser $user, array $filters = []): int
+    public function getDataCount(IdentityUserContract $user, array $filters = []): int
     {
         return $this->getDataQuery($user, $filters)->count();
     }
@@ -685,7 +685,7 @@ abstract class MiniAppBase extends PluginBase
     protected function getPartitionExcludeMetaAppSetting(string $partitionId): bool
     {
         try {
-            $service = app(\NewSolari\Core\Services\PartitionAppService::class);
+            $service = app(\NewSolari\Core\Contracts\PartitionAppServiceContract::class);
 
             return $service->shouldExcludeMetaApp($partitionId, $this->getId());
         } catch (\Exception $e) {

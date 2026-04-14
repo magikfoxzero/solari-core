@@ -4,9 +4,9 @@ namespace NewSolari\Core\Http;
 
 use NewSolari\Core\Constants\ApiConstants;
 use App\Http\Controllers\Controller;
-use NewSolari\Core\Identity\Models\RegistrySetting;
-use NewSolari\Core\Services\AuthorizationService;
-use NewSolari\Core\Services\OidcTokenService;
+use NewSolari\Core\Contracts\AuthorizationServiceContract;
+use NewSolari\Core\Contracts\IdentityUserContract;
+use NewSolari\Core\Contracts\OidcTokenServiceContract;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use NewSolari\Core\Identity\Models\IdentityUser;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class BaseController extends Controller
@@ -224,7 +223,7 @@ class BaseController extends Controller
      *
      * @throws HttpException If user is not authenticated or invalid type
      */
-    protected function getAuthenticatedUser(Request $request): IdentityUser
+    protected function getAuthenticatedUser(Request $request): IdentityUserContract
     {
         // SECURITY: Only read authenticated_user from request attributes (set by middleware)
         // Never use $request->get() which could read from POST body (potential privilege escalation)
@@ -241,7 +240,7 @@ class BaseController extends Controller
         }
 
         // Validate user type
-        if (! $user instanceof IdentityUser) {
+        if (! $user instanceof IdentityUserContract) {
             throw new HttpException(401, 'Invalid user type');
         }
 
@@ -427,7 +426,7 @@ class BaseController extends Controller
             }
         }
 
-        $service = app(\NewSolari\Core\Services\PartitionAppService::class);
+        $service = app(\NewSolari\Core\Contracts\PartitionAppServiceContract::class);
 
         return $service->isEnabled($partitionId, $pluginId);
     }
@@ -547,9 +546,9 @@ class BaseController extends Controller
     /**
      * Get the AuthorizationService instance.
      */
-    protected function getAuthorizationService(): AuthorizationService
+    protected function getAuthorizationService(): AuthorizationServiceContract
     {
-        return app(AuthorizationService::class);
+        return app(AuthorizationServiceContract::class);
     }
 
     /**
@@ -669,12 +668,12 @@ class BaseController extends Controller
     /**
      * Generate a JWT token using firebase/php-jwt library.
      *
-     * @param  IdentityUser  $user  The user to generate token for
+     * @param  IdentityUserContract  $user  The user to generate token for
      * @param  object|null  $previousTokenData  Optional already-decoded previous token to preserve iat/original_iat for refresh chains
      */
-    protected function generateJwtToken(IdentityUser $user, ?object $previousTokenData = null): string
+    protected function generateJwtToken(IdentityUserContract $user, ?object $previousTokenData = null): string
     {
-        $tokenService = app(OidcTokenService::class);
+        $tokenService = app(OidcTokenServiceContract::class);
         $slidingRefresh = (bool) config('jwt.sliding_refresh', false);
         $currentTime = time();
 
@@ -773,7 +772,8 @@ class BaseController extends Controller
      */
     protected function getAllowUnverifiedLoginSetting(): bool
     {
-        $setting = RegistrySetting::where('scope', 'system')
+        $registryModel = app('identity.registry_model');
+        $setting = $registryModel::where('scope', 'system')
             ->where('key', 'system.account.email_verification.allow_unverified_login')
             ->first();
 

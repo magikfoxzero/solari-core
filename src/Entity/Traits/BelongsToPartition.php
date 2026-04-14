@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Entity\Traits;
 
-use NewSolari\Core\Identity\Models\IdentityPartition;
+use NewSolari\Core\Contracts\IdentityPartitionContract;
 use NewSolari\Core\Entity\Scopes\PartitionScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -62,7 +62,8 @@ trait BelongsToPartition
      */
     public function getPartitionRelation(): BelongsTo
     {
-        return $this->belongsTo(IdentityPartition::class, 'partition_id', 'record_id');
+        $partitionModel = app('identity.partition_model');
+        return $this->belongsTo(get_class($partitionModel), 'partition_id', 'record_id');
     }
 
     /**

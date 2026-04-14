@@ -2,9 +2,7 @@
 
 namespace NewSolari\Core\Services;
 
-use NewSolari\Core\Identity\Models\EmailVerificationToken;
-use NewSolari\Core\Identity\Models\IdentityUser;
-use NewSolari\Core\Identity\Models\PasswordResetToken;
+use NewSolari\Core\Contracts\IdentityUserContract;
 use App\Mail\EmailVerificationMail;
 use App\Mail\PasswordResetMail;
 use Illuminate\Support\Facades\DB;
@@ -81,7 +79,7 @@ class EmailSecurityService
     public function createPasswordResetToken(string $email, ?string $partitionId = null): ?string
     {
         // Check if user exists with this email - bypass partition scope for auth flows
-        $query = IdentityUser::withoutGlobalScope('partition')
+        $query = app('identity.user_model')::withoutGlobalScope('partition')
             ->where('email', $email);
         if ($partitionId) {
             $query->where('partition_id', $partitionId);
@@ -110,13 +108,13 @@ class EmailSecurityService
 
         // Delete any existing token for this email+partition and create new one (atomic operation)
         DB::transaction(function () use ($email, $partitionId, $hashedToken) {
-            $query = PasswordResetToken::where('email', $email);
+            $query = app('identity.password_reset_token_model')::where('email', $email);
             if ($partitionId) {
                 $query->where('partition_id', $partitionId);
             }
             $query->delete();
 
-            PasswordResetToken::create([
+            app('identity.password_reset_token_model')::create([
                 'email' => $email,
                 'partition_id' => $partitionId,
                 'token' => $hashedToken,
@@ -139,11 +137,11 @@ class EmailSecurityService
      * @param  string  $token  The raw token from the user
      * @return IdentityUser|null The user if valid, null otherwise
      */
-    public function validatePasswordResetToken(string $email, string $token): ?IdentityUser
+    public function validatePasswordResetToken(string $email, string $token): ?IdentityUserContract
     {
         $hashedToken = $this->hashToken($token);
 
-        $resetToken = PasswordResetToken::where('email', $email)
+        $resetToken = app('identity.password_reset_token_model')::where('email', $email)
             ->where('token', $hashedToken)
             ->first();
 
@@ -176,7 +174,7 @@ class EmailSecurityService
      */
     public function consumePasswordResetToken(string $email, ?string $partitionId = null): void
     {
-        $query = PasswordResetToken::where('email', $email);
+        $query = app('identity.password_reset_token_model')::where('email', $email);
         if ($partitionId) {
             $query->where(function ($q) use ($partitionId) {
                 $q->where('partition_id', $partitionId)
@@ -206,7 +204,7 @@ class EmailSecurityService
         }
 
         // Bypass partition scope for auth flows
-        $query = IdentityUser::withoutGlobalScope('partition')
+        $query = app('identity.user_model')::withoutGlobalScope('partition')
             ->where('email', $email);
         if ($partitionId) {
             $query->where('partition_id', $partitionId);
@@ -247,16 +245,16 @@ class EmailSecurityService
      * @param  IdentityUser  $user  The user to verify
      * @return string The raw token (to send to user)
      */
-    public function createEmailVerificationToken(IdentityUser $user): string
+    public function createEmailVerificationToken(IdentityUserContract $user): string
     {
         $rawToken = $this->generateSecureToken();
         $hashedToken = $this->hashToken($rawToken);
 
         // Delete any existing tokens and create new one
         DB::transaction(function () use ($user, $hashedToken) {
-            EmailVerificationToken::deleteForUser($user->record_id);
+            app('identity.email_verification_token_model')::deleteForUser($user->record_id);
 
-            EmailVerificationToken::create([
+            app('identity.email_verification_token_model')::create([
                 'user_id' => $user->record_id,
                 'token' => $hashedToken,
                 'created_at' => now(),
@@ -276,11 +274,11 @@ class EmailSecurityService
      * @param  string  $token  The raw token from the user
      * @return IdentityUser|null The user if valid, null otherwise
      */
-    public function validateEmailVerificationToken(string $token): ?IdentityUser
+    public function validateEmailVerificationToken(string $token): ?IdentityUserContract
     {
         $hashedToken = $this->hashToken($token);
 
-        $verificationToken = EmailVerificationToken::findByToken($hashedToken);
+        $verificationToken = app('identity.email_verification_token_model')::findByToken($hashedToken);
 
         if (! $verificationToken) {
             Log::warning('Invalid email verification token attempt');
@@ -308,7 +306,7 @@ class EmailSecurityService
      * @param  string  $token  The raw token
      * @return IdentityUser|null The verified user, or null if invalid
      */
-    public function consumeEmailVerificationToken(string $token): ?IdentityUser
+    public function consumeEmailVerificationToken(string $token): ?IdentityUserContract
     {
         $user = $this->validateEmailVerificationToken($token);
 
@@ -319,7 +317,7 @@ class EmailSecurityService
         // Mark user as verified and delete all tokens
         DB::transaction(function () use ($user) {
             $user->markEmailAsVerified();
-            EmailVerificationToken::deleteForUser($user->record_id);
+            app('identity.email_verification_token_model')::deleteForUser($user->record_id);
         });
 
         Log::info('Email verified successfully', [
@@ -336,7 +334,7 @@ class EmailSecurityService
      * @param  IdentityUser  $user  The user to verify
      * @return bool True if email was sent, false otherwise
      */
-    public function sendVerificationEmail(IdentityUser $user): bool
+    public function sendVerificationEmail(IdentityUserContract $user): bool
     {
         if (! $user->email) {
             Log::warning('Cannot send verification email - user has no email', [
@@ -383,7 +381,7 @@ class EmailSecurityService
      */
     public function resendVerificationEmail(string $email, ?string $partitionId = null): bool
     {
-        $query = IdentityUser::withoutGlobalScope('partition')
+        $query = app('identity.user_model')::withoutGlobalScope('partition')
             ->where('email', $email);
 
         if ($partitionId) {
@@ -424,7 +422,7 @@ class EmailSecurityService
     public function sendAccountRecoveryEmail(string $email): bool
     {
         // Check if user exists with this email
-        $user = IdentityUser::withoutGlobalScope('partition')
+        $user = app('identity.user_model')::withoutGlobalScope('partition')
             ->where('email', $email)
             ->first();
 
@@ -491,11 +489,11 @@ class EmailSecurityService
      * @param  string  $token  The raw token from the user
      * @return IdentityUser|null The user if valid, null otherwise
      */
-    public function validateAccountRecoveryToken(string $email, string $token): ?IdentityUser
+    public function validateAccountRecoveryToken(string $email, string $token): ?IdentityUserContract
     {
         $hashedToken = $this->hashToken($token);
 
-        $user = IdentityUser::withoutGlobalScope('partition')
+        $user = app('identity.user_model')::withoutGlobalScope('partition')
             ->where('email', $email)
             ->where('account_recovery_token', $hashedToken)
             ->where('account_recovery_expires', '>', now())
@@ -519,7 +517,7 @@ class EmailSecurityService
      */
     public function consumeAccountRecoveryToken(string $email): void
     {
-        $user = IdentityUser::withoutGlobalScope('partition')
+        $user = app('identity.user_model')::withoutGlobalScope('partition')
             ->where('email', $email)
             ->first();
 
@@ -547,8 +545,8 @@ class EmailSecurityService
     {
         $expirationTime = now()->subSeconds(self::TOKEN_EXPIRATION_SECONDS);
 
-        $passwordResetDeleted = PasswordResetToken::where('created_at', '<', $expirationTime)->delete();
-        $emailVerificationDeleted = EmailVerificationToken::where('created_at', '<', $expirationTime)->delete();
+        $passwordResetDeleted = app('identity.password_reset_token_model')::where('created_at', '<', $expirationTime)->delete();
+        $emailVerificationDeleted = app('identity.email_verification_token_model')::where('created_at', '<', $expirationTime)->delete();
 
         Log::info('Expired tokens cleaned up', [
             'password_reset_deleted' => $passwordResetDeleted,

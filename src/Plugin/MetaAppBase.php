@@ -2,10 +2,10 @@
 
 namespace NewSolari\Core\Plugin;
 
+use NewSolari\Core\Contracts\IdentityUserContract;
 use NewSolari\Core\Entity\BaseEntity;
-use NewSolari\Core\Identity\Models\IdentityUser;
-use NewSolari\Core\Identity\Models\EntityRelationship;
-use NewSolari\Core\Identity\Models\EntityTypeRegistry;
+use NewSolari\Core\Entity\Models\EntityRelationship;
+use NewSolari\Core\Entity\Models\EntityTypeRegistry;
 use NewSolari\Folders\Models\Folder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -183,7 +183,7 @@ abstract class MetaAppBase extends PluginBase
     /**
      * Get data from multiple mini-apps with proper access control
      */
-    public function getIntegratedData(IdentityUser $user, array $miniAppDataRequests): array
+    public function getIntegratedData(IdentityUserContract $user, array $miniAppDataRequests): array
     {
         $integratedData = [];
         $pluginManager = app('plugin.manager');
@@ -248,7 +248,7 @@ abstract class MetaAppBase extends PluginBase
     /**
      * Apply integration logic to combined data
      */
-    protected function applyIntegrationLogic(array $integratedData, IdentityUser $user): array
+    protected function applyIntegrationLogic(array $integratedData, IdentityUserContract $user): array
     {
         // This should be implemented by specific meta-apps
         // to process and combine data from multiple mini-apps
@@ -258,7 +258,7 @@ abstract class MetaAppBase extends PluginBase
     /**
      * Create a meta-app entity that references mini-app data
      */
-    public function createMetaEntity(array $data, IdentityUser $user): BaseEntity
+    public function createMetaEntity(array $data, IdentityUserContract $user): BaseEntity
     {
         try {
             // Validate that all referenced mini-app data is accessible to the user
@@ -294,7 +294,7 @@ abstract class MetaAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    protected function validateMetaEntityData(array $data, IdentityUser $user): void
+    protected function validateMetaEntityData(array $data, IdentityUserContract $user): void
     {
         $pluginManager = app('plugin.manager');
 
@@ -341,7 +341,7 @@ abstract class MetaAppBase extends PluginBase
     /**
      * Create relationship records between meta entity and mini-app data
      */
-    protected function createRelationshipRecords(BaseEntity $metaEntity, array $data, IdentityUser $user): void
+    protected function createRelationshipRecords(BaseEntity $metaEntity, array $data, IdentityUserContract $user): void
     {
         // This should be implemented by specific meta-apps
         // to create pivot tables or relationship records
@@ -350,7 +350,7 @@ abstract class MetaAppBase extends PluginBase
     /**
      * Get meta entity with all related mini-app data
      */
-    public function getMetaEntityWithRelations(BaseEntity $metaEntity, IdentityUser $user): array
+    public function getMetaEntityWithRelations(BaseEntity $metaEntity, IdentityUserContract $user): array
     {
         // Check if user can access this meta entity
         if (! $this->checkDataAccess($metaEntity, $user, 'read')) {
@@ -381,7 +381,7 @@ abstract class MetaAppBase extends PluginBase
     /**
      * Get related mini-app data for a meta entity
      */
-    protected function getRelatedMiniAppData(BaseEntity $metaEntity, MiniAppBase $miniApp, IdentityUser $user): array
+    protected function getRelatedMiniAppData(BaseEntity $metaEntity, MiniAppBase $miniApp, IdentityUserContract $user): array
     {
         // This should be implemented by specific meta-apps
         // to query the pivot tables and get related data
@@ -392,7 +392,7 @@ abstract class MetaAppBase extends PluginBase
      * Check if user can access meta entity.
      * Includes share-based access for entities that use the Shareable trait.
      */
-    public function checkDataAccess(BaseEntity $entity, IdentityUser $user, string $action = 'read'): bool
+    public function checkDataAccess(BaseEntity $entity, IdentityUserContract $user, string $action = 'read'): bool
     {
         // System admins can do anything
         if ($user->is_system_user) {
@@ -455,7 +455,7 @@ abstract class MetaAppBase extends PluginBase
      * Check if user can change privacy settings for an entity.
      * Only owner, partition admin, or system admin can make records public/private.
      */
-    public function canUserChangePrivacy(BaseEntity $entity, IdentityUser $user): bool
+    public function canUserChangePrivacy(BaseEntity $entity, IdentityUserContract $user): bool
     {
         // System admins can do anything
         if ($user->is_system_user) {
@@ -479,7 +479,7 @@ abstract class MetaAppBase extends PluginBase
     /**
      * Check if user is part of the meta-app team
      */
-    protected function isUserInMetaAppTeam(BaseEntity $entity, IdentityUser $user): bool
+    protected function isUserInMetaAppTeam(BaseEntity $entity, IdentityUserContract $user): bool
     {
         // This can be overridden by specific meta-apps
         // to implement team-based access control
@@ -546,7 +546,7 @@ abstract class MetaAppBase extends PluginBase
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function validateContainerData(array $data, string $operation, IdentityUser $user, ?BaseEntity $existingEntity = null): array
+    public function validateContainerData(array $data, string $operation, IdentityUserContract $user, ?BaseEntity $existingEntity = null): array
     {
         $rules = $this->getValidationRules();
         $dataWithDefaults = $data;
@@ -631,7 +631,7 @@ abstract class MetaAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function createContainerItem(array $data, IdentityUser $user): BaseEntity
+    public function createContainerItem(array $data, IdentityUserContract $user): BaseEntity
     {
         try {
             $validatedData = $this->validateContainerData($data, 'create', $user);
@@ -667,7 +667,7 @@ abstract class MetaAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function updateContainerItem(BaseEntity $entity, array $data, IdentityUser $user): bool
+    public function updateContainerItem(BaseEntity $entity, array $data, IdentityUserContract $user): bool
     {
         try {
             if (! $this->checkDataAccess($entity, $user, 'update')) {
@@ -701,7 +701,7 @@ abstract class MetaAppBase extends PluginBase
      *
      * @throws \Exception
      */
-    public function deleteContainerItem(BaseEntity $entity, IdentityUser $user): bool
+    public function deleteContainerItem(BaseEntity $entity, IdentityUserContract $user): bool
     {
         try {
             if (! $this->checkDataAccess($entity, $user, 'delete')) {
@@ -740,7 +740,7 @@ abstract class MetaAppBase extends PluginBase
      * @param  IdentityUser  $user  The user performing the delete
      * @return int Number of records deleted
      */
-    protected function deleteSourceLinkedRecords(string $containerRecordId, IdentityUser $user): int
+    protected function deleteSourceLinkedRecords(string $containerRecordId, IdentityUserContract $user): int
     {
         $sourcePlugin = $this->getId();
         $deletedCount = 0;
@@ -815,7 +815,7 @@ abstract class MetaAppBase extends PluginBase
      * @param  string|null  $partitionId  Override partition context
      * @return \Illuminate\Database\Eloquent\Builder
      */
-    public function getContainerQuery(IdentityUser $user, array $filters = [], ?string $partitionId = null)
+    public function getContainerQuery(IdentityUserContract $user, array $filters = [], ?string $partitionId = null)
     {
         $modelClass = $this->getContainerModel();
         $query = $modelClass::query();
@@ -1096,7 +1096,7 @@ abstract class MetaAppBase extends PluginBase
      * @param  IdentityUser  $user  The user to check access for
      * @return bool True if user can access, false otherwise
      */
-    public function canUserAccessLinkedEntity(string $entityType, string $entityId, IdentityUser $user): bool
+    public function canUserAccessLinkedEntity(string $entityType, string $entityId, IdentityUserContract $user): bool
     {
         $entity = $this->resolveEntity($entityType, $entityId);
         if (! $entity) {
@@ -1173,7 +1173,7 @@ abstract class MetaAppBase extends PluginBase
      * @param  IdentityUser  $user  The user to check access for
      * @return array Array of node data with access info and display labels
      */
-    public function getVisibleNodesForUser(Collection $nodes, IdentityUser $user): array
+    public function getVisibleNodesForUser(Collection $nodes, IdentityUserContract $user): array
     {
         return $nodes->map(function ($node) use ($user) {
             $canAccess = $this->canUserAccessLinkedEntity(

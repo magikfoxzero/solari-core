@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Module\Middleware;
 
-use NewSolari\Core\Services\PartitionAppService;
+use NewSolari\Core\Contracts\PartitionAppServiceContract;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -13,12 +13,12 @@ class CheckPartitionAppEnabled
     /**
      * The partition app service instance.
      */
-    protected PartitionAppService $service;
+    protected PartitionAppServiceContract $service;
 
     /**
      * Create a new middleware instance.
      */
-    public function __construct(PartitionAppService $service)
+    public function __construct(PartitionAppServiceContract $service)
     {
         $this->service = $service;
     }

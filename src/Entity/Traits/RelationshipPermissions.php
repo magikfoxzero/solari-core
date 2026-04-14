@@ -2,8 +2,8 @@
 
 namespace NewSolari\Core\Entity\Traits;
 
-use NewSolari\Core\Identity\Models\IdentityUser;
-use NewSolari\Core\Identity\Models\EntityRelationship;
+use NewSolari\Core\Contracts\IdentityUserContract;
+use NewSolari\Core\Entity\Models\EntityRelationship;
 use Illuminate\Database\Eloquent\Model;
 
 trait RelationshipPermissions
@@ -11,7 +11,7 @@ trait RelationshipPermissions
     /**
      * Check if a user can attach an entity to this entity.
      */
-    public function canAttachEntity(?IdentityUser $user, Model|string $entity, string $relationshipType): bool
+    public function canAttachEntity(?IdentityUserContract $user, Model|string $entity, string $relationshipType): bool
     {
         // If no user provided, deny by default
         if (! $user) {
@@ -37,7 +37,7 @@ trait RelationshipPermissions
     /**
      * Check if a user can detach an entity from this entity.
      */
-    public function canDetachEntity(?IdentityUser $user, Model|string $entity, string $relationshipType): bool
+    public function canDetachEntity(?IdentityUserContract $user, Model|string $entity, string $relationshipType): bool
     {
         // If no user provided, deny by default
         if (! $user) {
@@ -60,7 +60,7 @@ trait RelationshipPermissions
     /**
      * Check if a user can view a specific relationship.
      */
-    public function canViewRelationship(?IdentityUser $user, EntityRelationship $relationship): bool
+    public function canViewRelationship(?IdentityUserContract $user, EntityRelationship $relationship): bool
     {
         // If no user provided, deny by default
         if (! $user) {
@@ -88,7 +88,7 @@ trait RelationshipPermissions
     /**
      * Check if a user can update a specific relationship.
      */
-    public function canUpdateRelationship(?IdentityUser $user, EntityRelationship $relationship): bool
+    public function canUpdateRelationship(?IdentityUserContract $user, EntityRelationship $relationship): bool
     {
         // If no user provided, deny by default
         if (! $user) {
@@ -116,7 +116,7 @@ trait RelationshipPermissions
     /**
      * Check if a user can delete a specific relationship.
      */
-    public function canDeleteRelationship(?IdentityUser $user, EntityRelationship $relationship): bool
+    public function canDeleteRelationship(?IdentityUserContract $user, EntityRelationship $relationship): bool
     {
         // Same as update for now
         return $this->canUpdateRelationship($user, $relationship);
@@ -138,7 +138,7 @@ trait RelationshipPermissions
      * Check if user can view this entity.
      * Override this method in the model for custom logic.
      */
-    protected function canUserView(IdentityUser $user): bool
+    protected function canUserView(IdentityUserContract $user): bool
     {
         // Default implementation - check if in same partition
         return $this->isInUserPartition($user);
@@ -148,7 +148,7 @@ trait RelationshipPermissions
      * Check if user can update this entity.
      * Override this method in the model for custom logic.
      */
-    protected function canUserUpdate(IdentityUser $user): bool
+    protected function canUserUpdate(IdentityUserContract $user): bool
     {
         // Default implementation - check if in same partition
         return $this->isInUserPartition($user);
@@ -157,7 +157,7 @@ trait RelationshipPermissions
     /**
      * Check if entity is in user's partition.
      */
-    protected function isInUserPartition(IdentityUser $user): bool
+    protected function isInUserPartition(IdentityUserContract $user): bool
     {
         // If entity doesn't have partition_id, allow access
         if (! isset($this->partition_id)) {

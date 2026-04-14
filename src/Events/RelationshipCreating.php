@@ -2,7 +2,7 @@
 
 namespace NewSolari\Core\Events;
 
-use NewSolari\Core\Identity\Models\EntityRelationship;
+use NewSolari\Core\Entity\Models\EntityRelationship;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
