@@ -63,6 +63,11 @@ class VerifyCsrfToken
             return null;
         }
 
+        // URL-decode the header — browsers URL-encode the cookie value when
+        // reading it from document.cookie and sending it as a header, but
+        // HTTP headers are not automatically URL-decoded by PHP (unlike cookies).
+        $header = urldecode($header);
+
         try {
             $value = App::make('encrypter')->decrypt($header, false);
 
