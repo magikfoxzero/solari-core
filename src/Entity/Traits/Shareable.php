@@ -312,7 +312,7 @@ trait Shareable
     /**
      * Check if user can access via share (for authorization checks).
      */
-    public function userHasShareAccess(IdentityUser $user, string $action = 'view'): bool
+    public function userHasShareAccess(IdentityUserContract $user, string $action = 'view'): bool
     {
         // Query directly with both shareable_id and shareable_type for proper polymorphic matching
         $share = RecordShare::where('shareable_id', $this->getKey())
