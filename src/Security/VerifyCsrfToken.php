@@ -73,10 +73,7 @@ class VerifyCsrfToken
 
             return $value;
         } catch (DecryptException) {
-            // Decryption failed — the header is likely a plaintext CSRF token
-            // (set by the monolith which doesn't encrypt XSRF-TOKEN cookies).
-            // Return the raw value for direct comparison against the plaintext cookie.
-            return $header;
+            return null;
         }
     }
 
