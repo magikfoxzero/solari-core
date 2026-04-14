@@ -34,7 +34,7 @@ class PartitionAppService
      */
     protected function partitionAppModel(): string
     {
-        return get_class(app('identity.partition_app_model'));
+        return app('identity.partition_app_model');
     }
 
     /**
