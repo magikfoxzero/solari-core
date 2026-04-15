@@ -13,7 +13,7 @@ namespace NewSolari\Core\Contracts;
  */
 interface PartitionAppServiceContract
 {
-    public function isEnabled(string $partitionId, string $pluginSlug): bool;
+    public function isEnabled(string $partitionId, string $pluginId): bool;
 
-    public function isAdminOnly(string $partitionId, string $pluginSlug): bool;
+    public function isAdminOnly(string $partitionId, string $pluginId): bool;
 }
