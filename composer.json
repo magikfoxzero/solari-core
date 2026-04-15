@@ -1,19 +1,17 @@
 {
     "name": "newsolari/core",
-    "description": "SolariWebOS Core — auth, identity, permissions, module system, service bus",
+    "description": "SolariWebOS Core — middleware, plugin system, module system, entity infrastructure",
     "type": "library",
     "license": "proprietary",
     "require": {
         "php": "^8.2",
         "laravel/framework": "^12.0",
         "firebase/php-jwt": "^7.0",
-        "web-auth/webauthn-lib": "^5.2",
         "ezyang/htmlpurifier": "^4.19"
     },
     "autoload": {
         "psr-4": {
-            "NewSolari\\Core\\": "src/",
-            "NewSolari\\Core\\Database\\Factories\\": "database/factories/"
+            "NewSolari\\Core\\": "src/"
         }
     },
     "autoload-dev": {
