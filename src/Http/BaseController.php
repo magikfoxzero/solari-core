@@ -720,6 +720,13 @@ class BaseController extends Controller
         $cookieConfig = config('jwt.cookie');
         $csrfConfig = config('jwt.csrf_cookie');
 
+        // Resolve cookie domain dynamically for multi-domain deployments.
+        // If JWT_COOKIE_DOMAIN is set, use it (single-domain mode).
+        // Otherwise, derive from the request host using ALLOWED_DOMAINS whitelist
+        // (e.g., api.kismetdrift.com → .kismetdrift.com)
+        $cookieDomain = $cookieConfig['domain'] ?: $this->resolveCookieDomain();
+        $csrfDomain = $csrfConfig['domain'] ?: $cookieDomain;
+
         // Generate CSRF token for double-submit cookie pattern
         $csrfToken = Str::random(64);
 
@@ -742,7 +749,7 @@ class BaseController extends Controller
             $token,
             $cookieExpirationMinutes,
             $cookieConfig['path'],
-            $cookieConfig['domain'],
+            $cookieDomain,
             $cookieConfig['secure'],
             $cookieConfig['http_only'], // true - prevents XSS theft
             false, // raw
@@ -755,7 +762,7 @@ class BaseController extends Controller
             $csrfToken,
             $cookieExpirationMinutes,
             $csrfConfig['path'],
-            $csrfConfig['domain'],
+            $csrfDomain,
             $csrfConfig['secure'],
             $csrfConfig['http_only'], // false - JavaScript must read this
             false,
@@ -763,6 +770,37 @@ class BaseController extends Controller
         );
 
         return $response;
+    }
+
+    /**
+     * Resolve cookie domain from request host using ALLOWED_DOMAINS whitelist.
+     * Returns dot-prefixed root domain for subdomain sharing.
+     * e.g., api.kismetdrift.com → .kismetdrift.com
+     */
+    private function resolveCookieDomain(): ?string
+    {
+        $host = request()->getHost();
+
+        if (! $host || filter_var($host, FILTER_VALIDATE_IP)) {
+            return null;
+        }
+
+        $allowedDomains = config('identity.allowed_domains', []);
+        if (! empty($allowedDomains)) {
+            foreach ($allowedDomains as $domain) {
+                if ($host === $domain || str_ends_with($host, '.' . $domain)) {
+                    return '.' . $domain;
+                }
+            }
+        }
+
+        // Fallback: extract root domain (last 2 segments), dot-prefixed
+        $parts = explode('.', $host);
+        if (count($parts) > 2) {
+            return '.' . implode('.', array_slice($parts, -2));
+        }
+
+        return null;
     }
 
     /**
