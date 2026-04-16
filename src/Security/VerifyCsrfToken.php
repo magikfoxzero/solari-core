@@ -35,18 +35,43 @@ class VerifyCsrfToken
 
         $csrfCookieName = config('jwt.csrf_cookie.name', 'XSRF-TOKEN');
 
-        // EncryptCookies middleware already decrypted the cookie
-        $cookieToken = $request->cookie($csrfCookieName);
-
         // The header contains the encrypted blob that JavaScript read from document.cookie.
         // We must decrypt it to compare against the decrypted cookie value.
         $headerToken = $this->decryptHeader($request->header('X-XSRF-TOKEN'));
 
-        if (! $cookieToken || ! $headerToken) {
+        if (! $headerToken) {
             return $this->reject($request, 'missing');
         }
 
-        if (! hash_equals($cookieToken, $headerToken)) {
+        // When multiple cookies exist (e.g., set by different subdomains),
+        // PHP's $_COOKIE keeps only one. Parse the raw Cookie header to get all values.
+        $cookieTokens = $this->getAllCookieValues($request, $csrfCookieName);
+
+        if (empty($cookieTokens)) {
+            return $this->reject($request, 'missing');
+        }
+
+        // Check if the header matches ANY of the XSRF-TOKEN cookies
+        $rawHeader = $request->header('Cookie', '');
+        $fromRawHeader = ! empty($rawHeader);
+        $matched = false;
+
+        foreach ($cookieTokens as $cookieToken) {
+            if ($fromRawHeader) {
+                // Raw header values are still encrypted — decrypt them
+                $decrypted = $this->decryptCookieValue($cookieToken);
+            } else {
+                // Fallback values from $request->cookie() are already decrypted by EncryptCookies
+                $decrypted = $cookieToken;
+            }
+
+            if ($decrypted && hash_equals($decrypted, $headerToken)) {
+                $matched = true;
+                break;
+            }
+        }
+
+        if (! $matched) {
             return $this->reject($request, 'mismatch');
         }
 
@@ -77,6 +102,56 @@ class VerifyCsrfToken
             }
 
             return $value;
+        } catch (DecryptException) {
+            return null;
+        }
+    }
+
+    /**
+     * Extract all values for a cookie name from the raw Cookie header.
+     * PHP's $_COOKIE only keeps one value per name, but browsers can send
+     * duplicates when cookies are set on different domains/paths.
+     */
+    private function getAllCookieValues(Request $request, string $name): array
+    {
+        $values = [];
+
+        // Parse raw Cookie header to find ALL values for this name
+        // (browsers can send duplicates when cookies are set on different domains)
+        $header = $request->header('Cookie', '');
+        if ($header) {
+            foreach (explode(';', $header) as $part) {
+                $part = trim($part);
+                if (str_starts_with($part, $name . '=')) {
+                    $values[] = urldecode(substr($part, strlen($name) + 1));
+                }
+            }
+        }
+
+        // Fallback: if no raw header (e.g., in tests), use Laravel's cookie bag
+        if (empty($values)) {
+            $cookie = $request->cookie($name);
+            if ($cookie) {
+                $values[] = $cookie;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * Decrypt a raw cookie value (same as what EncryptCookies does).
+     */
+    private function decryptCookieValue(string $value): ?string
+    {
+        try {
+            $decrypted = App::make('encrypter')->decrypt($value, false);
+
+            if (class_exists(\Illuminate\Cookie\CookieValuePrefix::class)) {
+                $decrypted = \Illuminate\Cookie\CookieValuePrefix::remove($decrypted);
+            }
+
+            return $decrypted;
         } catch (DecryptException) {
             return null;
         }
