@@ -33,6 +33,9 @@ class CoreServiceProvider extends ServiceProvider
         // Register ShareableTypeRegistry — modules register their shareable types at boot
         $this->app->singleton(ShareableTypeRegistry::class);
 
+        // Register ChannelRegistry — modules register their WebSocket channels at boot
+        $this->app->singleton(Services\ChannelRegistry::class);
+
         // Alias for plugin.manager (used by MetaAppBase)
         $this->app->alias(PluginRegistry::class, 'plugin.manager');
 
