@@ -25,7 +25,7 @@ class VerifyServiceToken
      */
     protected static array $serviceConfigKeys = [
         'ai' => 'services.ai.service_token',
-        'notifications' => 'services.notification_center.token',
+        'notifications' => 'services.notification_center.service_token',
         'websocket' => 'websocket.service_token',
     ];
 
