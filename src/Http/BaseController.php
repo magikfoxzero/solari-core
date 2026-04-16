@@ -406,7 +406,7 @@ class BaseController extends Controller
             return true;
         }
 
-        // Regular users can only access their own partition
+        // Regular users can only access their home partition
         $canAccess = $user->partition_id === $partitionId;
         $this->logPermissionDecision($request, 'Partition', 'Access', $canAccess, 'Regular user partition access');
 
@@ -661,8 +661,8 @@ class BaseController extends Controller
             return true;
         }
 
-        // Regular users must be in the entity's partition
-        return $user->partitions()->where('identity_partitions.record_id', $entity->partition_id)->exists();
+        // Regular users can only access entities in their home partition
+        return $user->partition_id === $entity->partition_id;
     }
 
     /**
@@ -678,13 +678,13 @@ class BaseController extends Controller
         $currentTime = time();
 
         $claims = [
-            'sub' => $user->record_id,
+            'sub' => $user->getRecordId(),
             'partition_id' => $user->partition_id,
-            'username' => $user->username,
-            'email' => $user->email,
-            'first_name' => $user->first_name,
-            'last_name' => $user->last_name,
-            'display_name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->username,
+            'username' => $user->getUsername(),
+            'email' => $user->getEmail(),
+            'first_name' => $user->getFirstName(),
+            'last_name' => $user->getLastName(),
+            'display_name' => $user->getDisplayName(),
             'is_system_user' => $user->is_system_user,
             'is_active' => $user->is_active,
             'is_partition_admin' => $user->isPartitionAdmin($user->partition_id),
@@ -772,26 +772,27 @@ class BaseController extends Controller
      */
     protected function getAllowUnverifiedLoginSetting(): bool
     {
-        $registryModel = app('identity.registry_model');
-        $setting = $registryModel::where('scope', 'system')
-            ->where('key', 'system.account.email_verification.allow_unverified_login')
-            ->first();
+        $registry = app(\NewSolari\Core\Contracts\RegistryServiceContract::class);
+        $value = $registry->getSystemSetting(
+            'system.account.email_verification.allow_unverified_login',
+            false
+        );
 
-        if (! $setting) {
-            Log::debug('getAllowUnverifiedLoginSetting: setting not found, returning false');
+        return $value === 'true' || $value === true;
+    }
 
-            return false; // Default: require verification before login
+    /**
+     * Mask an email address for safe inclusion in API responses.
+     * Shows first character of local part + asterisks + full domain.
+     */
+    protected function maskEmail(?string $email): ?string
+    {
+        if (!$email || !str_contains($email, '@')) {
+            return null;
         }
+        [$local, $domain] = explode('@', $email);
+        $masked = substr($local, 0, 1) . str_repeat('*', max(1, strlen($local) - 1));
 
-        $result = $setting->value === 'true' || $setting->value === true;
-
-        Log::debug('getAllowUnverifiedLoginSetting', [
-            'setting_id' => $setting->record_id,
-            'raw_value' => $setting->value,
-            'value_type' => gettype($setting->value),
-            'result' => $result,
-        ]);
-
-        return $result;
+        return $masked . '@' . $domain;
     }
 }

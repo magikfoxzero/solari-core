@@ -9,10 +9,7 @@ namespace NewSolari\Core\Contracts;
  * interface. The identity package provides the concrete implementation
  * (IdentityUser) and registers it via container bindings.
  *
- * Eloquent properties accessed via magic getters:
- * - record_id, partition_id, username, email
- * - is_system_user, is_active
- * - first_name, last_name, display_name
+ * Eloquent properties still accessed via magic getters (not in contract):
  * - is_partition_admin
  */
 interface IdentityUserContract
@@ -33,4 +30,22 @@ interface IdentityUserContract
     public function getAdminPartitionIds(): array;
 
     public function needsEmailVerification(): bool;
+
+    public function getRecordId(): string;
+
+    public function getEmail(): ?string;
+
+    public function getUsername(): string;
+
+    public function getFirstName(): ?string;
+
+    public function getLastName(): ?string;
+
+    public function getDisplayName(): string;
+
+    public function getPartitionId(): ?string;
+
+    public function isSystemUser(): bool;
+
+    public function isActive(): bool;
 }

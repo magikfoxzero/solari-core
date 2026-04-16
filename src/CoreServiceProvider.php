@@ -11,6 +11,7 @@ use NewSolari\Core\Services\PluginRegistry;
 use NewSolari\Core\Services\RelationshipMigrationService;
 use NewSolari\Core\Services\RelationshipService;
 use NewSolari\Core\Services\RelationshipTypeRegistryService;
+use NewSolari\Core\Services\ShareableTypeRegistry;
 
 class CoreServiceProvider extends ServiceProvider
 {
@@ -28,6 +29,9 @@ class CoreServiceProvider extends ServiceProvider
 
         // Register PluginRegistry as a singleton
         $this->app->singleton(PluginRegistry::class);
+
+        // Register ShareableTypeRegistry — modules register their shareable types at boot
+        $this->app->singleton(ShareableTypeRegistry::class);
 
         // Alias for plugin.manager (used by MetaAppBase)
         $this->app->alias(PluginRegistry::class, 'plugin.manager');
@@ -67,13 +71,36 @@ class CoreServiceProvider extends ServiceProvider
             \NewSolari\Core\Security\VerifyServiceToken::class
         );
 
+        $this->validateIdentityBindings();
+
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 
         if ($this->app->runningInConsole()) {
             $this->commands([
                 \NewSolari\Core\Module\Console\ModuleClearCacheCommand::class,
                 \NewSolari\Core\Module\Console\ModuleListCommand::class,
+                \NewSolari\Core\Console\CleanupIdempotencyKeysCommand::class,
+                \NewSolari\Core\Console\ArchiveDeletedRecordsCommand::class,
+                \NewSolari\Core\Console\PurgeArchivedRecordsCommand::class,
             ]);
+        }
+    }
+
+    /**
+     * Validate that required identity module bindings exist.
+     * Fails fast with a clear message if the identity module isn't loaded.
+     */
+    protected function validateIdentityBindings(): void
+    {
+        $required = ['identity.user_model', 'identity.partition_model'];
+
+        foreach ($required as $binding) {
+            if (! $this->app->bound($binding)) {
+                throw new \RuntimeException(
+                    "Required binding '{$binding}' is not registered. "
+                    . "Ensure the Identity module registers '{$binding}' in its register() method (not boot())."
+                );
+            }
         }
     }
 }

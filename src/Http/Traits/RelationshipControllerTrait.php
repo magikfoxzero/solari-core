@@ -68,15 +68,9 @@ trait RelationshipControllerTrait
                 }
             }
 
-            if (method_exists($entity, 'canViewRelationship') && $authenticatedUser) {
-                if (! $entity->canViewRelationship($authenticatedUser)) {
-                    return response()->json([
-                        'value' => false,
-                        'result' => 'Permission denied',
-                        'code' => 403,
-                    ], 403);
-                }
-            }
+            // Entity-level view permission is already checked by canAccessEntityPartition above.
+            // The RelationshipPermissions::canViewRelationship method requires a specific
+            // relationship record, so it's checked per-relationship below, not at entity level.
 
             // Get query parameters with bounds validation
             $perPage = min($request->input('per_page', 50), config('relationships.api.max_per_page', 200));
@@ -125,43 +119,8 @@ trait RelationshipControllerTrait
 
             // If include_deleted is requested, also fetch from history table
             if ($includeDeleted) {
-                $historyQuery = null; // EntityRelationshipHistory not implemented
-
-                // API-MED-010: Filter history by partition to prevent cross-partition data leak
-                // System admins bypass partition filtering
-                if (!$authenticatedUser->is_system_user) {
-                    $historyQuery->where('partition_id', $entity->partition_id);
-                }
-
-                // BIDIRECTIONAL: Always check both directions for history
-                $historyQuery->where(function ($q) use ($entity) {
-                    $q->where(function ($subQ) use ($entity) {
-                        $subQ->where('source_type', $entity->getEntityType())
-                            ->where('source_id', $entity->getKey());
-                    })
-                        ->orWhere(function ($subQ) use ($entity) {
-                            $subQ->where('target_type', $entity->getEntityType())
-                                ->where('target_id', $entity->getKey());
-                        });
-                });
-
-                if ($relationshipType) {
-                    $historyQuery->where('relationship_type', $relationshipType);
-                }
-
-                $deletedRelationships = $historyQuery->get()->map(function ($h) {
-                    $h->is_deleted = true;
-
-                    return $h;
-                });
-
-                // Deduplicate history by original_record_id
-                $existingIds = $relationships->pluck('record_id')->toArray();
-                $deletedRelationships = $deletedRelationships->filter(function ($h) use ($existingIds) {
-                    return ! in_array($h->original_record_id, $existingIds);
-                });
-
-                $relationships = $relationships->merge($deletedRelationships);
+                // EntityRelationshipHistory not implemented yet — skip
+                // TODO: Implement when history table is available
             }
 
             // API-MED-010: Filter cross-partition source/target entities from response
@@ -279,39 +238,8 @@ trait RelationshipControllerTrait
 
             // If include_deleted is requested, also fetch from history table
             if ($includeDeleted) {
-                $historyQuery = null; // EntityRelationshipHistory not implemented
-
-                // API-MED-010: Filter history by partition to prevent cross-partition data leak
-                // System admins bypass partition filtering
-                if (!$authenticatedUser->is_system_user) {
-                    $historyQuery->where('partition_id', $entity->partition_id);
-                }
-
-                // BIDIRECTIONAL: Always check both directions for history
-                $historyQuery->where(function ($q) use ($entity) {
-                    $q->where(function ($subQ) use ($entity) {
-                        $subQ->where('source_type', $entity->getEntityType())
-                            ->where('source_id', $entity->getKey());
-                    })
-                        ->orWhere(function ($subQ) use ($entity) {
-                            $subQ->where('target_type', $entity->getEntityType())
-                                ->where('target_id', $entity->getKey());
-                        });
-                });
-
-                $deletedRelationships = $historyQuery->get()->map(function ($h) {
-                    $h->is_deleted = true;
-
-                    return $h;
-                });
-
-                // Deduplicate history
-                $existingIds = $relationships->pluck('record_id')->toArray();
-                $deletedRelationships = $deletedRelationships->filter(function ($h) use ($existingIds) {
-                    return ! in_array($h->original_record_id, $existingIds);
-                });
-
-                $relationships = $relationships->merge($deletedRelationships);
+                // EntityRelationshipHistory not implemented yet — skip
+                // TODO: Implement when history table is available
             }
 
             // API-MED-010: Filter cross-partition source/target entities from response
@@ -954,8 +882,8 @@ trait RelationshipControllerTrait
             return true;
         }
 
-        // Regular users must be in the entity's partition
-        return $user->partitions()->where('identity_partitions.record_id', $entity->partition_id)->exists();
+        // Regular users can only access entities in their home partition
+        return $user->partition_id === $entity->partition_id;
     }
 
     /**

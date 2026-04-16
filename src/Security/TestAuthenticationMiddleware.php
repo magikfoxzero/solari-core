@@ -50,10 +50,9 @@ class TestAuthenticationMiddleware
                     // Set in attributes for PartitionScope to read
                     $request->attributes->set('partition_id', $partitionId);
 
-                    // Also merge into input if not already present (for backwards compatibility)
-                    if (! $request->input('partition_id')) {
-                        $request->merge(['partition_id' => $partitionId]);
-                    }
+                    // Note: Do NOT merge into $request->input() — production middleware uses
+                    // $request->attributes only. Merging would make tests pass with a
+                    // different security model than production.
                 }
             }
         }

@@ -47,7 +47,7 @@ class CheckPermission
         // Get partition ID from request attributes (set by AuthenticationMiddleware) or header
         // Note: Use $request->attributes->get() to get middleware-set values, not $request->get()
         // which would include POST body parameters that could be manipulated
-        $partitionId = $request->attributes->get('partition_id') ?? $request->header('X-Partition-ID');
+        $partitionId = $request->attributes->get('partition_id');
 
         // Tier 2: Partition admins bypass in their partition
         if ($partitionId && $user->isPartitionAdmin($partitionId)) {

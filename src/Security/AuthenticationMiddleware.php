@@ -40,9 +40,25 @@ class AuthenticationMiddleware
                 $userModel = app('identity.user_model');
                 $user = $userModel::withoutGlobalScope('partition')->where('record_id', $tokenData['user_id'])->first();
                 if ($user) {
-                    $request->attributes->set('authenticated_user', $user);
-                    $request->attributes->set('partition_id', $tokenData['partition_id'] ?? null);
-                    return $next($request);
+                    // Validate partition access (parity with JWT auth path)
+                    $wsPartitionId = $tokenData['partition_id'] ?? null;
+                    if ($wsPartitionId && ! $user->is_system_user
+                        && $user->partition_id !== $wsPartitionId) {
+                        Log::warning('WS token auth: partition access revoked', [
+                            'user_id' => $user->record_id,
+                            'partition_id' => $wsPartitionId,
+                        ]);
+
+                        return response()->json([
+                            'value' => false,
+                            'result' => 'Authentication failed: Partition access revoked',
+                            'code' => 403,
+                        ], 403);
+                    } else {
+                        $request->attributes->set('authenticated_user', $user);
+                        $request->attributes->set('partition_id', $wsPartitionId);
+                        return $next($request);
+                    }
                 }
             }
             // Invalid/expired WS token — fall through to normal JWT auth or reject
@@ -53,7 +69,7 @@ class AuthenticationMiddleware
         $authenticatedUser = $request->attributes->get('authenticated_user');
         if ($authenticatedUser) {
             // User is already authenticated via test helper
-            $partitionId = $request->get('partition_id');
+            $partitionId = $request->attributes->get('partition_id') ?? $request->header('X-Partition-ID');
 
             // If partition_id is not set in request, use the user's default partition
             // BUT only for non-system users. System admins must explicitly choose a partition context.
@@ -162,8 +178,9 @@ class AuthenticationMiddleware
                         Log::warning('Authentication attempt without partition access', [
                             'user_id' => $user->record_id,
                             'partition_id' => $partitionId,
-                            'user_partition_id' => $user->partition_id,
+                            'user_partition' => $user->partition_id,
                             'path' => $request->path(),
+                            'ip' => $request->ip(),
                         ]);
 
                         return response()->json([
@@ -176,6 +193,45 @@ class AuthenticationMiddleware
                     // Set the partition in the request using attributes (not merge)
                     // to prevent POST body manipulation attacks
                     $request->attributes->set('partition_id', $partitionId);
+                }
+
+                // SECURITY: Validate any partition_id in the request body
+                // This prevents privilege escalation via body parameter injection (parity with API-key path)
+                $requestBodyPartitionId = $request->input('partition_id');
+                if ($requestBodyPartitionId && ! $user->is_system_user) {
+                    // If body partition differs from header, reject (context confusion attack)
+                    if (! empty($partitionId) && $requestBodyPartitionId !== $partitionId) {
+                        Log::warning('JWT auth: partition ID mismatch between header and body', [
+                            'user_id' => $user->record_id,
+                            'header_partition' => $partitionId,
+                            'body_partition' => $requestBodyPartitionId,
+                            'path' => $request->path(),
+                            'ip' => $request->ip(),
+                        ]);
+
+                        return response()->json([
+                            'value' => false,
+                            'result' => 'Partition ID mismatch between header and request body',
+                            'code' => 400,
+                        ], 400);
+                    }
+
+                    // If no header partition, validate body partition access
+                    if (empty($partitionId) && $user->partition_id !== $requestBodyPartitionId) {
+                        Log::warning('JWT auth: partition access via request body denied', [
+                            'user_id' => $user->record_id,
+                            'requested_partition_id' => $requestBodyPartitionId,
+                            'user_partition' => $user->partition_id,
+                            'path' => $request->path(),
+                            'ip' => $request->ip(),
+                        ]);
+
+                        return response()->json([
+                            'value' => false,
+                            'result' => 'Access denied: No permission to access specified partition',
+                            'code' => 403,
+                        ], 403);
+                    }
                 }
 
                 // Attach user to request using attributes (not merge)
@@ -286,12 +342,12 @@ class AuthenticationMiddleware
             }
 
             // Check if user has access to this partition (system users have access to all partitions)
-            if (! $user->is_system_user && ! $user->partitions()->where('partition_id', $partitionId)->exists()) {
+            if (! $user->is_system_user && $user->partition_id !== $partitionId) {
                 Log::warning('Authentication attempt without partition access', [
                     'user_id' => $user->record_id,
                     'username' => $user->username,
                     'partition_id' => $partitionId,
-                    'user_partitions' => $user->partitions->pluck('record_id')->toArray(),
+                    'user_partition' => $user->partition_id,
                     'path' => $request->path(),
                     'ip' => $request->ip(),
                 ]);
@@ -308,29 +364,12 @@ class AuthenticationMiddleware
             $request->attributes->set('partition_id', $partitionId);
         }
 
-        // SECURITY: Also validate any partition_id in the request body
+        // SECURITY: Validate any partition_id in the request body
         // This prevents privilege escalation via body parameter injection
+        // Check order matches JWT path: mismatch first, then access check only when no header
         $requestBodyPartitionId = $request->input('partition_id');
         if ($requestBodyPartitionId && ! $user->is_system_user) {
-            // If partition_id is in the body, it MUST be in user's allowed partitions
-            if (! $user->partitions()->where('partition_id', $requestBodyPartitionId)->exists()) {
-                Log::warning('Attempted partition access via request body denied', [
-                    'user_id' => $user->record_id,
-                    'username' => $user->username,
-                    'requested_partition_id' => $requestBodyPartitionId,
-                    'allowed_partitions' => $user->partitions->pluck('record_id')->toArray(),
-                    'path' => $request->path(),
-                    'ip' => $request->ip(),
-                ]);
-
-                return response()->json([
-                    'value' => false,
-                    'result' => 'Access denied: No permission to access specified partition',
-                    'code' => 403,
-                ], 403);
-            }
-
-            // SECURITY: Ensure body partition_id matches header partition_id to prevent context confusion attacks
+            // If body partition differs from header, reject (context confusion attack)
             if (! empty($partitionId) && $requestBodyPartitionId !== $partitionId) {
                 Log::warning('Partition ID mismatch between header and body', [
                     'user_id' => $user->record_id,
@@ -345,6 +384,24 @@ class AuthenticationMiddleware
                     'result' => 'Partition ID mismatch between header and request body',
                     'code' => 400,
                 ], 400);
+            }
+
+            // If no header partition, validate body partition access
+            if (empty($partitionId) && $user->partition_id !== $requestBodyPartitionId) {
+                Log::warning('Attempted partition access via request body denied', [
+                    'user_id' => $user->record_id,
+                    'username' => $user->username,
+                    'requested_partition_id' => $requestBodyPartitionId,
+                    'user_partition' => $user->partition_id,
+                    'path' => $request->path(),
+                    'ip' => $request->ip(),
+                ]);
+
+                return response()->json([
+                    'value' => false,
+                    'result' => 'Access denied: No permission to access specified partition',
+                    'code' => 403,
+                ], 403);
             }
         }
 
@@ -370,15 +427,15 @@ class AuthenticationMiddleware
      */
     private function isPublicRoute(Request $request): bool
     {
-        $publicRoutes = [
+        $publicRoutes = config('auth.public_routes', [
             '/api/system/status',
             '/api/system/health',
             '/api/auth/login',
             '/api/auth/refresh',
-        ];
+        ]);
 
         foreach ($publicRoutes as $route) {
-            if ($request->is($route)) {
+            if ($request->is(ltrim($route, '/'))) {
                 return true;
             }
         }
@@ -416,14 +473,11 @@ class AuthenticationMiddleware
         $rateLimitKey = 'auth_attempts_'.$request->ip();
         $maxAttempts = 5;
 
-        // Use atomic increment - if key doesn't exist, it starts at 0 and increments to 1
-        // This prevents race conditions between check and increment
+        // Set TTL atomically on first creation, then increment
+        // Using Cache::add (no-op if key exists) avoids the race where
+        // Cache::put after increment resets concurrent increments to 1
+        Cache::add($rateLimitKey, 0, 60);
         $attempts = Cache::increment($rateLimitKey);
-
-        // Set expiry on first attempt (increment returns 1 for new keys)
-        if ($attempts === 1) {
-            Cache::put($rateLimitKey, 1, 60); // Reset TTL to 1 minute
-        }
 
         if ($attempts > $maxAttempts) {
             Log::warning('Rate limit exceeded for authentication', [
@@ -479,7 +533,9 @@ class AuthenticationMiddleware
         // (expired tokens, page refreshes, multiple tabs, network issues)
         $maxAttempts = 100;
 
-        $attempts = Cache::get($rateLimitKey, 0);
+        // Atomic check: use Cache::add to ensure TTL is set, then read current value
+        Cache::add($rateLimitKey, 0, 300);
+        $attempts = (int) Cache::get($rateLimitKey, 0);
 
         if ($attempts >= $maxAttempts) {
             Log::warning('Token validation rate limit exceeded', [
@@ -502,18 +558,14 @@ class AuthenticationMiddleware
     {
         $rateLimitKey = 'token_validation_'.$request->ip();
 
-        // Atomic increment
+        // Ensure key exists with TTL, then atomically increment
+        Cache::add($rateLimitKey, 0, 300);
         $attempts = Cache::increment($rateLimitKey);
 
-        // Set expiry on first attempt
-        if ($attempts === 1) {
-            Cache::put($rateLimitKey, 1, 300); // 5 minute window
-        }
-
-        Log::info('Token validation attempt failed', [
+        Log::warning('Token validation attempt failed', [
             'ip' => $request->ip(),
             'attempts' => $attempts,
-            'max_attempts' => 100, // Must match checkTokenValidationRateLimit threshold
+            'max_attempts' => 100,
             'path' => $request->path(),
         ]);
     }
@@ -681,7 +733,7 @@ class AuthenticationMiddleware
     }
 
     /**
-     * Process a validated JWT payload (shared by both HMAC and OIDC paths).
+     * Process a validated JWT payload.
      * Checks required claims, purpose tokens, blacklist, and loads the user.
      *
      * @param  array<string, mixed>  $payload
@@ -756,7 +808,7 @@ class AuthenticationMiddleware
             return null;
         }
 
-        // Verify partition access if specified in token
+        // Verify partition access if specified in token (defense-in-depth — outer middleware also checks)
         if (isset($payload['partition_id']) && ! $user->is_system_user) {
             if ($user->partition_id !== $payload['partition_id']) {
                 return null;

@@ -164,10 +164,8 @@ trait RelationshipPermissions
             return true;
         }
 
-        // Check if user has access to this partition
-        return $user->partitions()
-            ->where('identity_partitions.record_id', $this->partition_id)
-            ->exists();
+        // Regular users can only access their home partition
+        return $user->partition_id === $this->partition_id;
     }
 
     /**

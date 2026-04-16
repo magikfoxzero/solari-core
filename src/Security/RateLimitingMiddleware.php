@@ -133,11 +133,11 @@ class RateLimitingMiddleware
     protected function resolveRequestSignature($request): string
     {
         if ($user = $request->user()) {
-            return sha1($user->getAuthIdentifier());
+            return sha1($user->getAuthIdentifier().'|'.$request->path());
         }
 
         if ($route = $request->route()) {
-            return sha1($route->getDomain().'|'.$route->uri());
+            return sha1($route->getDomain().'|'.$route->uri().'|'.$request->ip());
         }
 
         return sha1($request->ip());

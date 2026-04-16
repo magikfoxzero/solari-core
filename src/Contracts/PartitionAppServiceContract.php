@@ -16,4 +16,6 @@ interface PartitionAppServiceContract
     public function isEnabled(string $partitionId, string $pluginId): bool;
 
     public function isAdminOnly(string $partitionId, string $pluginId): bool;
+
+    public function shouldExcludeMetaApp(string $partitionId, string $pluginId): bool;
 }

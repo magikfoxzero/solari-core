@@ -265,8 +265,8 @@ abstract class MetaAppBase extends PluginBase
             $this->validateMetaEntityData($data, $user);
 
             // Create the meta entity
-            $modelClass = $this->getDataModel();
-            $validatedData = $this->validateMetaData($data);
+            $modelClass = $this->getContainerModel();
+            $validatedData = $this->validateMetaData($data, $user);
             $entity = $modelClass::createWithValidation($validatedData);
 
             // Create relationship records
@@ -323,14 +323,14 @@ abstract class MetaAppBase extends PluginBase
     /**
      * Validate meta data before creation
      */
-    protected function validateMetaData(array $data): array
+    protected function validateMetaData(array $data, IdentityUserContract $user): array
     {
         // Basic validation - should be overridden by specific meta-apps
         $validatedData = [
             'record_id' => $data['record_id'] ?? \Illuminate\Support\Str::uuid(),
-            'partition_id' => $data['partition_id'] ?? auth()->user()->partition_id,
-            'created_by' => $data['created_by'] ?? auth()->user()->record_id,
-            'updated_by' => $data['updated_by'] ?? auth()->user()->record_id,
+            'partition_id' => $data['partition_id'] ?? $user->partition_id,
+            'created_by' => $data['created_by'] ?? $user->record_id,
+            'updated_by' => $data['updated_by'] ?? $user->record_id,
             'title' => $data['title'] ?? 'Untitled',
             'description' => $data['description'] ?? '',
         ];
@@ -737,7 +737,7 @@ abstract class MetaAppBase extends PluginBase
      * Uses source_plugin and source_record_id to identify linked records.
      *
      * @param  string  $containerRecordId  The record ID of the container being deleted
-     * @param  IdentityUser  $user  The user performing the delete
+     * @param  IdentityUserContract  $user  The user performing the delete
      * @return int Number of records deleted
      */
     protected function deleteSourceLinkedRecords(string $containerRecordId, IdentityUserContract $user): int
@@ -1093,7 +1093,7 @@ abstract class MetaAppBase extends PluginBase
      *
      * @param  string  $entityType  Entity type key
      * @param  string  $entityId  Entity record ID
-     * @param  IdentityUser  $user  The user to check access for
+     * @param  IdentityUserContract  $user  The user to check access for
      * @return bool True if user can access, false otherwise
      */
     public function canUserAccessLinkedEntity(string $entityType, string $entityId, IdentityUserContract $user): bool
@@ -1170,7 +1170,7 @@ abstract class MetaAppBase extends PluginBase
      * Returns node data as arrays with display_label resolved.
      *
      * @param  Collection  $nodes  Collection of node records
-     * @param  IdentityUser  $user  The user to check access for
+     * @param  IdentityUserContract  $user  The user to check access for
      * @return array Array of node data with access info and display labels
      */
     public function getVisibleNodesForUser(Collection $nodes, IdentityUserContract $user): array

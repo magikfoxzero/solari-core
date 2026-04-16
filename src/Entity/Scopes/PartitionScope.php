@@ -95,7 +95,11 @@ class PartitionScope implements Scope
             return $request->attributes->get('partition_id');
         }
 
-        // 3. Check request header (for partition switching)
+        // 3. Check request header (for partition switching).
+        // NOTE: This header is NOT validated against user access here — the
+        // AuthenticationMiddleware validates it for user-authenticated requests.
+        // For service-to-service calls (VerifyServiceToken), the calling service
+        // is trusted to send a valid partition ID.
         if ($request && $request->hasHeader('X-Partition-ID')) {
             return $request->header('X-Partition-ID');
         }

@@ -24,7 +24,7 @@ trait MiniAppControllerTrait
      * Get the authenticated user from the request.
      * This method must be implemented by the class using this trait.
      */
-    abstract protected function getAuthenticatedUser(Request $request): ?IdentityUserContract;
+    abstract protected function getAuthenticatedUser(Request $request): IdentityUserContract;
 
     /**
      * Get relations to be loaded (override in controller if needed)
@@ -150,9 +150,6 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUserContract) {
-                return $this->errorResponse('Authentication required', 401);
-            }
 
             $user->load('permissions', 'groups.permissions');
 
@@ -206,9 +203,6 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUserContract) {
-                return $this->errorResponse('Authentication required', 401);
-            }
 
             $user->load('permissions', 'groups.permissions');
 
@@ -260,9 +254,6 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUserContract) {
-                return $this->errorResponse('Authentication required', 401);
-            }
 
             $model = $plugin->getDataModel();
             $item = $model::find($id);
@@ -294,9 +285,6 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUserContract) {
-                return $this->errorResponse('Authentication required', 401);
-            }
 
             $model = $plugin->getDataModel();
             $item = $model::find($id);
@@ -343,9 +331,6 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUserContract) {
-                return $this->errorResponse('Authentication required', 401);
-            }
 
             $model = $plugin->getDataModel();
             $item = $model::find($id);
@@ -393,9 +378,6 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUserContract) {
-                return $this->errorResponse('Authentication required', 401);
-            }
 
             $user->load('permissions', 'groups.permissions');
 
@@ -459,9 +441,6 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUserContract) {
-                return $this->errorResponse('Authentication required', 401);
-            }
 
             $user->load('permissions', 'groups.permissions');
 
@@ -524,9 +503,6 @@ trait MiniAppControllerTrait
     {
         try {
             $user = $this->getAuthenticatedUser($request);
-            if (! $user || ! $user instanceof IdentityUserContract) {
-                return $this->errorResponse('Authentication required', 401);
-            }
 
             $user->load('permissions', 'groups.permissions');
 

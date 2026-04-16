@@ -4,6 +4,7 @@ namespace NewSolari\Core\Security;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -13,7 +14,7 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Used by multiple modules that expose service-to-service endpoints.
  * Supports optional service name parameter for per-service token lookup:
- *   - service.token          → checks services.service_token, falls back to jwt.secret
+ *   - service.token          → checks services.service_token
  *   - service.token:ai       → checks services.ai.service_token, falls back to default
  *   - service.token:notifications → checks services.notification_center.token, falls back to default
  */
@@ -46,9 +47,9 @@ class VerifyServiceToken
 
     /**
      * Resolve the expected token for the given service.
-     * Per-service config takes priority, then global service_token, then jwt.secret.
+     * Per-service config takes priority, then global service_token.
      */
-    protected function resolveExpectedToken(?string $service): string
+    protected function resolveExpectedToken(?string $service): ?string
     {
         // Check per-service config first
         if ($service && isset(static::$serviceConfigKeys[$service])) {
@@ -58,7 +59,11 @@ class VerifyServiceToken
             }
         }
 
-        // Fall back to global service token, then jwt.secret
-        return config('services.service_token') ?? config('jwt.secret') ?? '';
+        $fallback = config('services.service_token');
+        if (!$fallback) {
+            Log::critical('VerifyServiceToken: No service_token configured — all service-to-service requests will be rejected');
+        }
+
+        return $fallback ?: null;
     }
 }

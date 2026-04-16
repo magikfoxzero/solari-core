@@ -106,7 +106,7 @@ class MaintenanceMode
         // The --secret option creates a bypass cookie that admins can use
         Artisan::call('down', [
             '--retry' => $retryAfter,
-            '--secret' => config('app.maintenance_secret', 'solari-admin-bypass'),
+            '--secret' => config('app.maintenance_secret') ?: \Illuminate\Support\Str::random(32),
         ]);
 
         // Store additional data (message) in the down file
