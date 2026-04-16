@@ -358,6 +358,16 @@ return new class extends Migration
             });
         }
 
+        if (!Schema::hasTable('websocket_channels')) {
+            Schema::create('websocket_channels', function (Blueprint $table) {
+                $table->string('prefix', 100)->primary();
+                $table->string('type', 20)->default('private'); // 'private' or 'presence'
+                $table->string('auth_url', 500); // 'local:user_match' or HTTP callback URL
+                $table->string('registered_by', 100)->nullable(); // module name that registered this
+                $table->timestamps();
+            });
+        }
+
         Schema::enableForeignKeyConstraints();
     }
 
@@ -367,6 +377,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::disableForeignKeyConstraints();
+        Schema::dropIfExists('websocket_channels');
         Schema::dropIfExists('core_modules');
         Schema::dropIfExists('record_shares_archive');
         Schema::dropIfExists('entity_relationships_archive');
