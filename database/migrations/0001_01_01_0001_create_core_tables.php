@@ -208,29 +208,7 @@ return new class extends Migration
             });
         }
 
-        if (!Schema::hasTable('push_subscriptions')) {
-            Schema::create('push_subscriptions', function (Blueprint $table) {
-                $table->string('record_id', 36)->primary();
-                $table->string('user_id', 36);
-                $table->string('partition_id', 36);
-                $table->text('endpoint');
-                if (DB::getDriverName() === 'sqlite') {
-                    $table->string('endpoint_hash', 64)->nullable();
-                } else {
-                    $table->string('endpoint_hash', 64)->storedAs('SHA2(endpoint, 256)');
-                }
-                $table->string('p256dh_key', 512);
-                $table->string('auth_key', 256);
-                $table->string('user_agent')->nullable();
-                $table->timestamp('last_used_at')->nullable();
-                $table->timestamps();
-                $table->unique('endpoint_hash', 'push_subscriptions_endpoint_unique');
-                $table->index(['user_id', 'partition_id'], 'push_subscriptions_user_id_partition_id_index');
-                $table->index('partition_id', 'push_subscriptions_partition_id_foreign');
-                $table->foreign('partition_id')->references('record_id')->on('identity_partitions');
-                $table->foreign('user_id')->references('record_id')->on('identity_users');
-            });
-        }
+        // push_subscriptions moved to push-notifications module migration
 
         if (!Schema::hasTable('record_shares')) {
             Schema::create('record_shares', function (Blueprint $table) {
@@ -309,39 +287,8 @@ return new class extends Migration
             });
         }
 
-        if (!Schema::hasTable('users')) {
-            Schema::create('users', function (Blueprint $table) {
-                $table->id();
-                $table->string('name');
-                $table->string('email');
-                $table->timestamp('email_verified_at')->nullable();
-                $table->string('password');
-                $table->string('remember_token', 100)->nullable();
-                $table->timestamps();
-                $table->unique('email', 'users_email_unique');
-            });
-        }
-
-        if (!Schema::hasTable('native_push_tokens')) {
-            Schema::create('native_push_tokens', function (Blueprint $table) {
-                $table->id();
-                $table->char('record_id', 36);
-                $table->char('user_id', 36);
-                $table->char('partition_id', 36);
-                $table->string('token', 512);
-                $table->string('platform', 16);
-                $table->string('device_info')->nullable();
-                $table->timestamp('last_used_at')->nullable();
-                $table->timestamps();
-                $table->unique('record_id', 'native_push_tokens_record_id_unique');
-                $table->unique('token', 'native_push_tokens_token_unique');
-                $table->index(['user_id', 'partition_id'], 'native_push_tokens_user_id_partition_id_index');
-                $table->index('platform', 'native_push_tokens_platform_index');
-                $table->index('partition_id', 'native_push_tokens_partition_id_foreign');
-                $table->foreign('partition_id')->references('record_id')->on('identity_partitions')->onDelete('cascade');
-                $table->foreign('user_id')->references('record_id')->on('identity_users')->onDelete('cascade');
-            });
-        }
+        // Legacy 'users' table removed — app uses identity_users
+        // native_push_tokens moved to push-notifications module migration
 
         // Archive table
         if (!Schema::hasTable('entity_relationships_archive')) {
@@ -423,12 +370,11 @@ return new class extends Migration
         Schema::dropIfExists('core_modules');
         Schema::dropIfExists('record_shares_archive');
         Schema::dropIfExists('entity_relationships_archive');
-        Schema::dropIfExists('native_push_tokens');
-        Schema::dropIfExists('users');
+        // native_push_tokens + push_subscriptions dropped by push-notifications module
+        // users table removed (legacy — app uses identity_users)
         Schema::dropIfExists('sessions');
         Schema::dropIfExists('relationship_type_registry');
         Schema::dropIfExists('record_shares');
-        Schema::dropIfExists('push_subscriptions');
         Schema::dropIfExists('migration_errors');
         Schema::dropIfExists('migration_baseline');
         Schema::dropIfExists('jobs');
